@@ -387,6 +387,82 @@ Documentação completa: `02_desenvolvimento/2026_03_23_protocolo_avaliacao/prot
 
 ---
 
+## Escopo: TCC vs Produto
+
+Esta seção documenta decisões de escopo explícitas — o que foi descartado intencionalmente e por quê, para não reabrir discussões resolvidas.
+
+### API síncrona é suficiente para o TCC
+
+O `/pipeline/run` atual é **síncrono**: bloqueia até o pipeline terminar e retorna o resultado. Para um produto real com usuários submetendo documentos, isso seria um problema — o pipeline pode levar minutos para uma página completa.
+
+A arquitetura de produto correta seria:
+1. `POST /pipeline/run` retorna imediatamente um `job_id`
+2. `GET /pipeline/status/{job_id}` para polling
+3. Armazenamento de jobs (SQLite/Redis)
+4. Frontend consumindo essa API
+
+**Por que não implementar agora:** o protocolo de avaliação do TCC roda offline — o avaliador lê o `output.json` produzido pelo pipeline, não há usuário em tempo real. Para demonstrar o pipeline e gerar os resultados da avaliação, a API síncrona + Postman é suficiente.
+
+**Quando implementar:** se o projeto evoluir para produto após a entrega. Isso pertence à seção de Trabalhos Futuros do relatório.
+
+### Teste via Postman é intencional
+
+Os agentes são classes Python puras — A3 chama A2 diretamente em Python, sem HTTP. A API HTTP existe para:
+- Testes manuais durante o desenvolvimento
+- Endpoint `/pipeline/run` para acionar o pipeline de fora
+- Exposição futura como serviço
+
+O fluxo interno do pipeline em produção é:
+```
+pipeline.py → A1 → A2 → A3 → A4 → A5 → A6
+```
+Nenhuma chamada HTTP entre agentes — tudo em processo.
+
+---
+
+## Débitos Técnicos
+
+Lista centralizada de decisões adiadas, limitações conhecidas e trabalho futuro. Atualizar a cada sessão de desenvolvimento.
+
+### Performance — thinking mode do qwen3.5:9b
+
+**Problema:** qwen3.5:9b executa raciocínio interno mesmo com `think=False` na chain. Latência atual: ~25–39s por linha de manuscrito.
+
+**Impacto:** pipeline com 20 linhas por página ≈ 8–13 minutos. Viável para avaliação offline do TCC, mas lento.
+
+**Mitigações a avaliar (Semana 2+):**
+- Testar modelo sem thinking nativo (ex: `qwen2.5vl:7b`) — provavelmente mais rápido
+- Medir se o thinking melhora a qualidade da transcrição o suficiente para justificar o custo
+- Ajustar `num_predict` para limitar geração
+
+**Status:** pendente — avaliar após integrar A1 e medir latência ponta-a-ponta em página real.
+
+### Pipeline assíncrono (jobs + polling)
+
+**Problema:** `/pipeline/run` é síncrono. Para uso interativo com UI, seria necessário job_id + polling.
+
+**Decisão:** fora do escopo do TCC. Implementar como Trabalho Futuro se o projeto evoluir para produto.
+
+### Frontend
+
+**Problema:** não há interface de usuário. Interação atual via Postman/API.
+
+**Decisão:** fora do escopo do TCC. A avaliação é offline. Mencionar em Trabalhos Futuros.
+
+### Experimento: granularidade de input do A2 (página vs linha vs bloco)
+
+**Problema:** A2 recebe crops de linha individualmente (saída do A1). Não foi avaliado se passar blocos de texto ou a página inteira melhoraria a qualidade da transcrição — o contexto visual maior pode ajudar o modelo a interpretar palavras ambíguas.
+
+**Status:** pendente — experimento possível após pipeline E2E funcionar.
+
+### Pydantic dinâmico no A5 (NER)
+
+**Problema:** diferentes coleções têm campos diferentes (batismo vs casamento vs óbito). O A5 precisa de um schema Pydantic gerado dinamicamente por coleção, não hardcoded.
+
+**Status:** pendente — implementar na Semana 4 junto com A5.
+
+---
+
 ## Contexto acadêmico
 
 **RecordIndex v1.0** (IC/IT): pipeline Transkribus → PyLaia HTR → doc-UFCN segmentação → similaridade cosseno para agrupamento → Ollama para correção → export.
