@@ -12,6 +12,7 @@ Endpoints:
 """
 
 import json
+import logging
 import tempfile
 from pathlib import Path
 
@@ -23,6 +24,8 @@ from src.llm_client import get_chat_model
 from src.agents.a2_htr import A2HTRAgent
 from src import pipeline
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger("recordindex.api")
 
 app = FastAPI(title="RecordIndex 2.0", version="0.1.0")
 config = Config.from_env()
@@ -56,16 +59,27 @@ async def a2_transcribe(file: UploadFile = File(...)):
         tmp.write(await file.read())
         tmp_path = tmp.name
 
+    logger.info("A2 transcribe: file=%s provider=%s model=%s", file.filename, config.a2_provider, config.a2_model)
     try:
         model = get_chat_model(config.a2_provider, config.a2_model, config.ollama_base_url)
         agent = A2HTRAgent(model)
-        text = agent.transcribe(tmp_path)
+        logger.info("A2 invoking model...")
+        if config.debug:
+            raw, text = agent.transcribe_debug(tmp_path)
+            logger.info("A2 raw result: %r", raw)
+        else:
+            raw, text = None, agent.transcribe(tmp_path)
+        logger.info("A2 text: %r", text)
     except Exception as e:
+        logger.exception("A2 error")
         raise HTTPException(status_code=502, detail=str(e))
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
-    return {"filename": file.filename, "htr_text": text}
+    response = {"filename": file.filename, "htr_text": text}
+    if config.debug:
+        response["debug_raw"] = raw
+    return response
 
 
 @app.post("/pipeline/run")

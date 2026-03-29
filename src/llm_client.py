@@ -19,7 +19,7 @@ from langchain_core.language_models import BaseChatModel
 def get_chat_model(provider: str, model: str, ollama_base_url: str = "http://localhost:11434") -> BaseChatModel:
     if provider == "ollama":
         from langchain_ollama import ChatOllama
-        return ChatOllama(model=model, base_url=ollama_base_url)
+        return ChatOllama(model=model, base_url=ollama_base_url, think=False)
 
     if provider == "anthropic":
         from langchain_anthropic import ChatAnthropic

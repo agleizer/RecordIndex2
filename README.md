@@ -96,6 +96,8 @@ model = get_chat_model("openai",     "gpt-4o",             ...)
 
 O A0 pode escalar para um provider externo em runtime injetando `a2_model_override` (ou `aN_model_override`) no estado do LangGraph — sem refatorar os agentes.
 
+> **Qwen3.5 e thinking mode:** modelos da família Qwen3 têm modo *thinking* ativado por padrão, que gera tokens `<think>...</think>` antes da resposta. O `llm_client.py` passa `think=False` ao instanciar `ChatOllama` para desativar esse comportamento — necessário para que a resposta seja texto limpo.
+
 ---
 
 ## Estrutura do repositório
@@ -169,6 +171,8 @@ Collection
 - Docker Compose v2 (`docker compose`, não `docker-compose`)
 - GPU NVIDIA com drivers atualizados (necessário para inferência dos modelos)
 
+> **Windows:** o repositório precisa estar em uma unidade local (ex: `C:\`). Docker Desktop não consegue fazer bind mount de caminhos de rede UNC (`\\servidor\...`).
+
 ---
 
 ## Como rodar e testar o A2
@@ -190,7 +194,7 @@ docker compose up --build
 O Compose vai executar na seguinte ordem:
 1. Build do container `app`
 2. Sobe `ollama` e aguarda até ficar saudável
-3. `ollama-init` baixa todos os modelos de `OLLAMA_MODELS_PULL` (na primeira execução pode demorar — `qwen3.5:9b` tem ~6 GB)
+3. `ollama-init` baixa todos os modelos de `OLLAMA_MODELS_PULL` (na primeira execução pode demorar — `qwen3.5:9b` tem ~6.6 GB)
 4. Somente após o download completo, o `app` sobe
 
 Acompanhe os logs do download:
@@ -254,6 +258,8 @@ Resposta esperada:
   "htr_text": "aos vinte dias do mez de janeiro de mil oitocentos"
 }
 ```
+
+> **Nota:** a primeira inferência após subir o container demora mais (~30s para carregar o modelo na GPU). As seguintes são mais rápidas.
 
 ---
 
@@ -344,7 +350,8 @@ docker compose exec ollama nvidia-smi
 docker compose exec ollama ollama list
 
 # Testar Ollama diretamente (texto)
-curl http://localhost:11434/api/generate -d '{
+# Porta 11435 no host — evita conflito com Ollama local instalado no Windows
+curl http://localhost:11435/api/generate -d '{
   "model": "llama3.2",
   "prompt": "Olá, tudo bem?",
   "stream": false

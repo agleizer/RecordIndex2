@@ -33,6 +33,9 @@ class Config:
     output_dir: str
     samples_dir: str
 
+    # Debug
+    debug: bool
+
     @classmethod
     def from_env(cls) -> "Config":
         return cls(
@@ -52,4 +55,5 @@ class Config:
             input_dir=os.getenv("INPUT_DIR", "/data/input"),
             output_dir=os.getenv("OUTPUT_DIR", "/data/output"),
             samples_dir=os.getenv("SAMPLES_DIR", "/data/samples"),
+            debug=os.getenv("DEBUG", "false").lower() == "true",
         )

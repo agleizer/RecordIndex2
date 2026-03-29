@@ -26,7 +26,7 @@ services:
     volumes:
       - ollama_data:/root/.ollama       # named volume — persiste modelos entre runs
     ports:
-      - "11434:11434"                   # exposto no host para testes diretos
+      - "11435:11434"                   # host:11435 → evita conflito com Ollama local no Windows
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 10s
@@ -57,7 +57,7 @@ services:
       - "-c"
       - |
         echo "Pulling models: $OLLAMA_MODELS_PULL"
-        echo "$OLLAMA_MODELS_PULL" | tr ',' '\n' | while read $$model; do
+        echo "$OLLAMA_MODELS_PULL" | tr ',' '\n' | while read -r model; do
           echo "==> ollama pull $$model"
           ollama pull "$$model"
         done
