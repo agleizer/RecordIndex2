@@ -11,6 +11,12 @@ Providers suportados:
 
 O A0 (Semana 5) usará esta factory para escalar para providers externos
 em casos onde o modelo local não for suficiente.
+
+Utilitário:
+  disable_think(model) — retorna instância com think=False baked in.
+  Deve ser chamado pelos agentes que usam with_structured_output com
+  modelos Qwen3.5. NÃO use .bind(think=False): o binding é descartado
+  quando with_structured_output delega via __getattr__ ao modelo base.
 """
 
 from langchain_core.language_models import BaseChatModel
@@ -30,3 +36,60 @@ def get_chat_model(provider: str, model: str, ollama_base_url: str = "http://loc
         return ChatOpenAI(model=model)
 
     raise ValueError(f"Provider desconhecido: '{provider}'. Use: ollama | anthropic | openai")
+
+
+def disable_think(model: BaseChatModel) -> BaseChatModel:
+    """
+    Retorna o modelo com thinking mode desabilitado, baked in na instância.
+
+    O nome do campo mudou entre versões do langchain_ollama:
+      - 0.x: campo "think"
+      - 1.x: campo "reasoning"
+
+    Para outros providers: retorna o modelo sem alteração.
+    """
+    try:
+        from langchain_ollama import ChatOllama
+        if isinstance(model, ChatOllama):
+            fields = ChatOllama.model_fields.keys()
+            if "reasoning" in fields:
+                return model.model_copy(update={"reasoning": False})
+            elif "think" in fields:
+                return model.model_copy(update={"think": False})
+    except ImportError:
+        pass
+    return model
+
+
+def make_structured(model: BaseChatModel, schema: type):
+    """
+    Retorna uma chain Runnable com thinking mode desabilitado e structured output.
+
+    Usa method="function_calling" (tool calling API) para Ollama — mais robusto que
+    method="json_schema" porque não depende do campo `format` do Ollama.
+
+    Contexto: Ollama 0.19.0-rc0 tem um bug onde format=dict (JSON schema) é ignorado
+    para modelos Qwen3.5, retornando texto puro. function_calling e json_mode funcionam.
+    function_calling é preferido por não exigir instruções de formato no prompt.
+
+    O parâmetro reasoning/think é setado via model_copy() na instância antes de
+    construir a chain — .bind() seria descartado por with_structured_output.
+
+    Para providers não-Ollama (Anthropic, OpenAI): usa with_structured_output normalmente.
+    """
+    try:
+        from langchain_ollama import ChatOllama
+        if isinstance(model, ChatOllama):
+            fields = ChatOllama.model_fields.keys()
+            update = {}
+            if "reasoning" in fields:
+                update["reasoning"] = False
+            elif "think" in fields:
+                update["think"] = False
+            configured = model.model_copy(update=update)
+            return configured.with_structured_output(schema, method="json_schema")
+    except ImportError:
+        pass
+
+    # providers não-Ollama: with_structured_output funciona normalmente
+    return disable_think(model).with_structured_output(schema, method="json_schema")

@@ -47,13 +47,13 @@ Imagem de página
 
 | Agente | Status | Semana |
 |--------|--------|--------|
-| A2 HTR multimodal | ✅ Implementado (básico) | 1 |
-| A1 Segmentação | 🔲 Pendente | 2 |
-| A3 Segmentação de registros | 🔲 Pendente | 3 |
-| A4 Correção estrutural | 🔲 Pendente | 3 |
-| A5 NER/Extração | 🔲 Pendente | 4 |
+| A2 HTR multimodal | ✅ Implementado e testado | 1 |
+| A0 Orquestrador (Python puro) | ✅ Implementado (LangGraph na Semana 5) | 2 |
+| A3 Segmentação de registros | ✅ Implementado | 2 |
+| A5 NER/Extração | ✅ Implementado | 2 |
+| A1 Segmentação de linhas | 🔲 Pendente | 3 |
+| A4 Correção estrutural | 🔲 Pendente | 4 |
 | A6 Validação | 🔲 Pendente | 4 |
-| A0 Orquestrador | 🔲 Pendente | 5 |
 
 ---
 
@@ -96,11 +96,12 @@ model = get_chat_model("openai",     "gpt-4o",             ...)
 
 O A0 pode escalar para um provider externo em runtime injetando `a2_model_override` (ou `aN_model_override`) no estado do LangGraph — sem refatorar os agentes.
 
-> **Qwen3.5 e thinking mode:** modelos da família Qwen3 têm modo *thinking* ativado por padrão. Thinking mode e structured output são **incompatíveis** (documentado pela Alibaba Cloud). Para agentes que usam `with_structured_output`, o parâmetro deve ser travado via `.bind(think=False)` antes do wrapper:
+> **Qwen3.5 e thinking mode:** modelos da família Qwen3 têm modo *thinking* ativado por padrão. Thinking mode e structured output são **incompatíveis** (documentado pela Alibaba Cloud). O parâmetro `think`/`reasoning` deve ser travado via `model_copy()` na instância antes de construir a chain — `.bind(think=False)` é silenciosamente descartado por `with_structured_output`. Use sempre `make_structured(model, Schema)` de `src/llm_client.py`:
 > ```python
-> model.bind(think=False).with_structured_output(Schema, method="json_schema")
+> from src.llm_client import make_structured
+> self._chain = make_structured(model, MySchema)
 > ```
-> Passar `think=False` só no construtor do `ChatOllama` não é suficiente — é dropado pelo wrapper.
+> Em langchain_ollama 1.x o campo se chama `reasoning` (não `think`). `make_structured()` detecta o nome correto em runtime.
 
 ---
 
@@ -122,7 +123,7 @@ RecordIndex2/
 ├── src/
 │   ├── api.py                  # API HTTP (FastAPI) — porta 8000
 │   ├── main.py                 # Ponto de entrada CLI
-│   ├── pipeline.py             # Coordenação do pipeline
+│   ├── pipeline.py             # run() e run_with_orchestrator()
 │   ├── config.py               # Configuração via variáveis de ambiente
 │   ├── llm_client.py           # Factory de providers (Ollama, Anthropic, OpenAI)
 │   ├── schemas.py              # Schemas Pydantic compartilhados (API responses)
@@ -131,10 +132,14 @@ RecordIndex2/
 │   │   ├── line.py             # Linha de texto (unidade básica)
 │   │   ├── page.py             # Página do manuscrito
 │   │   ├── record.py           # Registro genealógico (grupo de linhas)
-│   │   └── collection.py       # Coleção de documentos
+│   │   ├── collection.py       # Coleção de documentos
+│   │   └── collection_config.py  # Tipo de coleção + campos de extração (batismo/casamento/obito)
 │   │
 │   └── agents/
-│       └── a2_htr.py           # A2: transcrição via Ollama VLM
+│       ├── a2_htr.py           # A2: transcrição via Ollama VLM
+│       ├── a3_segmentation.py  # A3: segmentação de linhas em registros
+│       ├── a5_ner.py           # A5: extração de campos via schema Pydantic dinâmico
+│       └── a0_orchestrator.py  # A0: coordena A2 → A3 → A5 (LangGraph na Semana 5)
 │
 ├── evaluation/                 # Módulo de avaliação offline (≠ pipeline)
 │   └── __init__.py
@@ -180,7 +185,7 @@ Collection
 
 ---
 
-## Como rodar e testar o A2
+## Como rodar
 
 ### Passo 1 — Configurar o ambiente
 
@@ -216,7 +221,17 @@ app  | INFO:     Application startup complete.
 
 Os modelos ficam no named volume `ollama_data` e persistem entre execuções. Nas próximas vezes, o `ollama-init` detecta que os modelos já existem e completa instantaneamente.
 
-### Passo 3 — Verificar que está tudo ok
+---
+
+## Testando com Postman
+
+Documentação interativa (Swagger): `http://localhost:8000/docs`
+
+> **Nota:** a primeira inferência após subir o container demora mais (~30–60s para carregar o modelo na GPU). As seguintes são mais rápidas.
+
+---
+
+### GET /health — verificar que está tudo ok
 
 ```
 GET http://localhost:8000/health
@@ -237,47 +252,181 @@ Resposta esperada:
 }
 ```
 
-### Passo 4 — Colocar uma imagem de linha manuscrita
+---
 
-Copie uma imagem de linha individual (crop de uma linha do manuscrito) para:
+### POST /a2/transcribe — transcrever uma linha manuscrita (testa A2)
 
-```
-volumes/samples/
-```
+Transcreve uma imagem de linha individual (crop de uma linha do manuscrito).
 
-Formatos aceitos: `.jpg`, `.jpeg`, `.png`, `.tif`, `.tiff`
-
-### Passo 5 — Transcrever via Postman
-
-```
-POST http://localhost:8000/a2/transcribe
-```
-
+**Configuração no Postman:**
+- Method: `POST`
+- URL: `http://localhost:8000/a2/transcribe`
 - Body: `form-data`
 - Campo: `file` | Tipo: `File` | Valor: selecionar a imagem
 
-Resposta esperada:
+Formatos aceitos: `.jpg`, `.jpeg`, `.png`, `.tif`, `.tiff`
+
+Coloque a imagem de linha em `volumes/samples/` ou faça upload direto pelo Postman.
+
+**Resposta esperada:**
 ```json
 {
   "filename": "linha_001.jpg",
-  "htr_text": "aos vinte dias do mez de janeiro de mil oitocentos"
+  "htr_text": "Aos vinte dias do mez de janeiro de mil oitocentos e cincoenta"
 }
 ```
 
-> **Nota:** a primeira inferência após subir o container demora mais (~30s para carregar o modelo na GPU). As seguintes são mais rápidas.
+**Com DEBUG=true no .env**, a resposta inclui `debug_raw` com o objeto bruto retornado pelo modelo.
 
 ---
 
-## API — referência completa
+### POST /a3/segment — segmentar linhas em registros (testa A3)
+
+Recebe uma lista de textos transcritos e retorna quais índices iniciam novos registros.
+
+**Configuração no Postman:**
+- Method: `POST`
+- URL: `http://localhost:8000/a3/segment`
+- Body: `raw` → `JSON`
+
+**Body de exemplo (batismo):**
+```json
+{
+  "lines": [
+    "Aos quatro dias do mês de abril de mil oitocentos e cincoenta,",
+    "baptizei solenemente a Maria, filha legítima de José Ferreira",
+    "e de Ana dos Santos. Padrinho: Francisco Alves. Madrina: Rosa.",
+    "Aos doze dias do mês de abril de mil oitocentos e cincoenta,",
+    "baptizei a João, filho natural de Joaquina de tal.",
+    "Nada mais constava. O vigário: Padre Manuel.",
+    "Aos vinte dias do mês de abril de mil oitocentos e cincoenta,"
+  ],
+  "collection_type": "batismo"
+}
+```
+
+**Resposta esperada:**
+```json
+{
+  "record_start_indices": [0, 3, 6],
+  "reasoning": "Cada registro começa com 'Aos X dias do mês...'",
+  "num_records": 3
+}
+```
+
+`collection_type` aceita: `batismo` | `casamento` | `obito`
+
+---
+
+### POST /a5/extract — extrair campos de um registro (testa A5)
+
+Recebe o texto de um registro completo e extrai os campos estruturados.
+
+**Configuração no Postman:**
+- Method: `POST`
+- URL: `http://localhost:8000/a5/extract`
+- Body: `raw` → `JSON`
+
+**Body de exemplo (batismo):**
+```json
+{
+  "record_text": "Aos vinte dias do mez de janeiro de mil oitocentos e cinquenta, na matriz de São Paulo, baptizei a Pedro, filho legítimo de João da Silva e de Maria Antonia.",
+  "collection_type": "batismo"
+}
+```
+
+**Resposta esperada:**
+```json
+{
+  "fields": {
+    "nome": "Pedro",
+    "pai": "João da Silva",
+    "mae": "Maria Antonia",
+    "data": "vinte dias do mez de janeiro de mil oitocentos e cinquenta"
+  },
+  "collection_type": "batismo"
+}
+```
+
+**Body de exemplo (casamento):**
+```json
+{
+  "record_text": "Aos dois dias do mez de fevereiro de mil oitocentos e sessenta, depois de proclamas, casei Antonio Pereira, filho de Manoel Pereira e de Joanna Maria, com Francisca Gomes, filha de Pedro Gomes e de Clara da Silva.",
+  "collection_type": "casamento"
+}
+```
+
+**Resposta esperada:**
+```json
+{
+  "fields": {
+    "noivo": "Antonio Pereira",
+    "noiva": "Francisca Gomes",
+    "pai_noivo": "Manoel Pereira",
+    "mae_noivo": "Joanna Maria",
+    "pai_noiva": "Pedro Gomes",
+    "mae_noiva": "Clara da Silva",
+    "data": "dois dias do mez de fevereiro de mil oitocentos e sessenta"
+  },
+  "collection_type": "casamento"
+}
+```
+
+---
+
+### POST /pipeline/run — pipeline completo A2→A3→A5
+
+Processa todas as imagens em `volumes/samples/`, executa A2 (HTR) → A3 (segmentação) → A5 (extração) e salva o resultado em `volumes/output/output.json`.
+
+**Pré-requisito:** colocar imagens de linha em `volumes/samples/` (um arquivo por linha, em ordem).
+
+**Configuração no Postman:**
+- Method: `POST`
+- URL: `http://localhost:8000/pipeline/run`
+- Body: `raw` → `JSON` (opcional — se omitido usa `batismo`)
+
+**Body (opcional):**
+```json
+{
+  "collection_type": "batismo",
+  "collection_name": "Batismos São Paulo 1850"
+}
+```
+
+**Resposta:** JSON completo da Collection com todos os Records e campos extraídos. O mesmo JSON é salvo em `volumes/output/output.json`.
+
+> **Atenção:** o pipeline é síncrono — a request bloqueia até terminar. Para 10 imagens de linha com qwen3.5:9b, espere ~5–7 minutos.
+
+---
+
+### GET /pipeline/last-output — rever o último resultado
+
+```
+GET http://localhost:8000/pipeline/last-output
+```
+
+Retorna o `output.json` da última execução do pipeline. Útil para inspecionar resultados sem re-executar.
+
+Retorna 404 se nenhum pipeline tiver rodado ainda.
+
+---
+
+## API — referência rápida
 
 Documentação interativa (Swagger): `http://localhost:8000/docs`
 
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| GET | `/health` | Liveness check — retorna modelos configurados por agente |
-| POST | `/a2/transcribe` | Transcreve uma imagem de linha (testa A2 isolado) |
-| POST | `/pipeline/run` | Roda pipeline completo sobre `volumes/samples/` |
-| GET | `/pipeline/last-output` | Retorna o último `output.json` gerado |
+| Método | Endpoint | Body | Descrição |
+|--------|----------|------|-----------|
+| GET | `/health` | — | Liveness check — retorna modelos configurados por agente |
+| POST | `/a2/transcribe` | `form-data: file` | Transcreve uma imagem de linha (testa A2 isolado) |
+| POST | `/a3/segment` | `{"lines": [...], "collection_type": "batismo"}` | Segmenta textos em registros (testa A3 isolado) |
+| POST | `/a5/extract` | `{"record_text": "...", "collection_type": "batismo"}` | Extrai campos de um registro (testa A5 isolado) |
+| POST | `/pipeline/run` | `{"collection_type": "batismo", "collection_name": "..."}` (opcional) | Roda pipeline completo (A2→A3→A5) sobre `volumes/samples/` |
+| GET | `/pipeline/last-output` | — | Retorna o último `output.json` gerado |
+
+`collection_type` aceita: `batismo` \| `casamento` \| `obito`
+
+Ver seção **Testando com Postman** acima para exemplos completos de body e resposta por endpoint.
 
 ---
 
@@ -420,13 +569,78 @@ Nenhuma chamada HTTP entre agentes — tudo em processo.
 
 ---
 
+## CollectionConfig — configuração de coleção
+
+`CollectionConfig` é o contrato que permite ao pipeline funcionar com qualquer tipo de coleção sem alteração de código nos agentes.
+
+```python
+from src.models.collection_config import CollectionConfig
+
+# Tipos pré-definidos
+cfg = CollectionConfig.batismo("Batismos São Paulo 1850–1870")
+cfg = CollectionConfig.casamento()
+cfg = CollectionConfig.obito()
+
+# Tipo customizado
+cfg = CollectionConfig(
+    collection_type="inventario",
+    collection_name="Inventários 1880",
+    record_start_hint="Inventário de",
+    extraction_fields={"testador": str, "data": str, "herdeiros": str},
+    field_descriptions={
+        "testador": "nome do testador (pessoa que fez o inventário)",
+        "data": "data do inventário (dia, mês e ano)",
+        "herdeiros": "nomes dos herdeiros listados",
+    },
+)
+```
+
+`field_descriptions` é obrigatório para A5 funcionar — sem ele o modelo não sabe o que extrair para cada campo e tende a jogar o texto inteiro no primeiro campo disponível.
+
+Campos de extração por tipo padrão:
+
+| Tipo | Campos |
+|------|--------|
+| `batismo` | nome (pessoa batizada), pai, mae, data |
+| `casamento` | noivo, noiva, pai_noivo, mae_noivo, pai_noiva, mae_noiva, data |
+| `obito` | nome (pessoa falecida), pai, mae, data, idade |
+
+### Como A3 usa CollectionConfig
+
+A3 recebe todas as linhas transcritas de uma página e chama o LLM **uma vez** com o contexto da coleção (tipo + `record_start_hint`). O modelo retorna os índices de início de cada registro (`RecordBoundaries`) — não agrupa, apenas detecta fronteiras. O agente faz o corte determinístico.
+
+Uma chamada por página (não por linha) minimiza latência e dá ao modelo contexto completo para detectar padrões inter-linha.
+
+### Como A5 usa CollectionConfig
+
+A5 constrói o schema Pydantic dinamicamente via `pydantic.create_model()`:
+
+```python
+NEROutput = create_model(f"NEROutput_{collection_type}", nome=(str, ""), pai=(str, ""), ...)
+chain = make_structured(self._base_model, NEROutput)
+```
+
+O schema é cacheado por `collection_type`. A instrução de preservar nomes exatamente como aparecem no texto está explícita no prompt — isso é importante para a hipótese acadêmica sobre alucinação em nomes próprios.
+
+---
+
 ## Débitos Técnicos
 
 Lista centralizada de decisões adiadas, limitações conhecidas e trabalho futuro. Atualizar a cada sessão de desenvolvimento.
 
+### A2 — sem structured output (Ollama 0.19.0-rc0 + Qwen3.5 + imagem)
+
+**Problema:** Ollama 0.19.0-rc0 ignora o parâmetro `format` quando o input contém imagem. `format=schema_dict` (json_schema), `format="json"` (json_mode) e `method="function_calling"` foram testados — todos falham com input multimodal para Qwen3.5:9b. O modelo transcreve corretamente, mas o parser explode por receber plain text em vez de JSON.
+
+**Decisão:** A2 chama o modelo diretamente sem structured output e retorna `result.content.strip()`. Funciona porque A2 sempre extrai um único campo de texto — não há perda funcional para o TCC.
+
+**Quando retomar:** atualização do Ollama saindo do RC, ou substituição do modelo de HTR por um que suporte tool calling com imagem.
+
+**Status:** workaround em produção desde 29/03/2026.
+
 ### Performance — thinking mode do qwen3.5:9b
 
-**Problema:** qwen3.5:9b executa raciocínio interno mesmo com `think=False` na chain. Latência atual: ~25–39s por linha de manuscrito.
+**Problema:** qwen3.5:9b executa raciocínio interno mesmo com `reasoning=False`. Latência atual: ~25–39s por linha de manuscrito.
 
 **Impacto:** pipeline com 20 linhas por página ≈ 8–13 minutos. Viável para avaliação offline do TCC, mas lento.
 
@@ -436,6 +650,18 @@ Lista centralizada de decisões adiadas, limitações conhecidas e trabalho futu
 - Ajustar `num_predict` para limitar geração
 
 **Status:** pendente — avaliar após integrar A1 e medir latência ponta-a-ponta em página real.
+
+### A3 — estratégia de segmentação não escala
+
+**Problema:** A3 recebe todas as linhas de uma página em uma única chamada LLM. Para páginas longas, isso pode exceder o context window do modelo. Para processar registros que cruzam fronteiras de página, a abordagem não funciona.
+
+**Alternativa identificada:** sliding window linha a linha — para cada linha `i`, enviar `[i-1, i, i+1]` e perguntar se inicia novo registro. Mais chamadas LLM, mas chamadas menores e paralelizáveis. Para registros genealógicos com marcadores de início explícitos ("Aos X dias", "Em nome de Deus"), contexto local de 2–3 linhas é suficiente.
+
+**Decisão:** usar abordagem atual (batch por página) para o TCC — o corpus de avaliação tem páginas de tamanho razoável. Documentar como limitação na seção de Discussão.
+
+**Quando implementar:** se houver tempo na Semana 4+, implementar sliding window e comparar resultados. Candidato natural a Trabalhos Futuros.
+
+**Status:** limitação documentada, workaround aceito para o TCC.
 
 ### Pipeline assíncrono (jobs + polling)
 
@@ -455,11 +681,15 @@ Lista centralizada de decisões adiadas, limitações conhecidas e trabalho futu
 
 **Status:** pendente — experimento possível após pipeline E2E funcionar.
 
-### Pydantic dinâmico no A5 (NER)
+### CollectionConfig hardcoded — deveria ser dinâmico via A0
 
-**Problema:** diferentes coleções têm campos diferentes (batismo vs casamento vs óbito). O A5 precisa de um schema Pydantic gerado dinamicamente por coleção, não hardcoded.
+**Problema:** os tipos de coleção (`batismo`, `casamento`, `obito`), seus campos de extração e as descrições de cada campo estão hardcoded como factories estáticas em `src/models/collection_config.py`. Para suportar um tipo novo é necessário alterar o código.
 
-**Status:** pendente — implementar na Semana 4 junto com A5.
+**O que deveria acontecer:** o orquestrador A0 deveria receber o tipo de coleção como parâmetro e montar o `CollectionConfig` dinamicamente — via arquivo de configuração externo (YAML/JSON) ou banco de dados. Assim nenhum agente precisaria ser alterado para suportar uma nova coleção.
+
+**Decisão:** manter hardcoded para o TCC — o corpus de avaliação é fixo (batismo, casamento, óbito). Avaliar na Semana 5 ao implementar A0. Candidato a Trabalhos Futuros.
+
+**Status:** limitação documentada, aceita para o TCC.
 
 ---
 

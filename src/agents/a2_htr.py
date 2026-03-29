@@ -1,15 +1,11 @@
 import base64
 from pathlib import Path
 
-from pydantic import BaseModel
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 
+from src.llm_client import disable_think
 from src.models.line import Line
-
-
-class HTROutput(BaseModel):
-    text: str
 
 
 _MEDIA_TYPES = {
@@ -24,25 +20,23 @@ class A2HTRAgent:
     A2 — Agente HTR Multimodal (Simple Reflex).
 
     Agnóstico ao provider: recebe qualquer BaseChatModel (Ollama, Claude, GPT).
-    Structured output via json_schema — Ollama enforça o schema na geração.
-    Interface compatível com nós LangGraph via __call__ (para A0, Semana 5).
+    NÃO usa structured output — Qwen3.5 com input de imagem ignora format="json"
+    e retorna plain text de qualquer forma. O conteúdo da transcrição é lido
+    diretamente de result.content.
 
-    O A0 pode escalar para outro provider injetando 'a2_model_override'
-    no estado do LangGraph.
+    Interface compatível com nós LangGraph via __call__ (para A0, Semana 5).
     """
 
     PROMPT = (
         "Você é um especialista em transcrição de manuscritos históricos em português brasileiro. "
         "Transcreva exatamente o texto manuscrito presente nesta imagem de linha. "
         "Preserve a ortografia original, mesmo que arcaica. "
-        "Se não conseguir ler alguma palavra, use [?] no lugar."
+        "Se não conseguir ler alguma palavra, use [?] no lugar. "
+        "Retorne APENAS o texto transcrito, sem explicações."
     )
 
     def __init__(self, model: BaseChatModel):
-        # .bind(think=False) trava o parâmetro antes do with_structured_output.
-        # Qwen3.5 em thinking mode não suporta structured output — o bind garante
-        # que think=False está em toda invocação mesmo quando wrappado pelo parser.
-        self._model = model.bind(think=False).with_structured_output(HTROutput, method="json_schema")
+        self._model = disable_think(model)
 
     def _build_message(self, image_path: str) -> HumanMessage:
         suffix = Path(image_path).suffix.lower()
@@ -55,13 +49,13 @@ class A2HTRAgent:
         ])
 
     def transcribe(self, image_path: str) -> str:
-        result: HTROutput = self._model.invoke([self._build_message(image_path)])
-        return result.text.strip()
+        result = self._model.invoke([self._build_message(image_path)])
+        return result.content.strip()
 
     def transcribe_debug(self, image_path: str):
         """Retorna (result_raw, text) para debug (ativado via DEBUG=true no .env)."""
-        result: HTROutput = self._model.invoke([self._build_message(image_path)])
-        return repr(result), result.text.strip()
+        result = self._model.invoke([self._build_message(image_path)])
+        return repr(result), result.content.strip()
 
     def transcribe_line(self, line: Line) -> Line:
         line.htr_text = self.transcribe(line.image_path)

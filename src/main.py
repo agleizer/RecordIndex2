@@ -25,7 +25,7 @@ def main():
 
     print("RecordIndex 2.0 — Pipeline Mínimo (Semana 1)")
     print(f"  Input   : {samples_dir}")
-    print(f"  Ollama  : {config.ollama_base_url}  modelo={config.ollama_model}")
+    print(f"  Ollama  : {config.ollama_base_url}  modelo_a2={config.a2_model}")
     print(f"  Output  : {config.output_dir}")
     print("-" * 60)
 
