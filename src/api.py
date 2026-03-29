@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 from src.config import Config
 from src.llm_client import get_chat_model
 from src.agents.a2_htr import A2HTRAgent
+from src.schemas import HealthResponse, AgentConfig, TranscribeResponse
 from src import pipeline
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -30,24 +31,27 @@ logger = logging.getLogger("recordindex.api")
 app = FastAPI(title="RecordIndex 2.0", version="0.1.0")
 config = Config.from_env()
 
+if config.debug:
+    logging.getLogger("httpx").setLevel(logging.DEBUG)
 
-@app.get("/health")
-def health():
-    return {
-        "status": "ok",
-        "ollama_url": config.ollama_base_url,
-        "agents": {
-            "a0": {"provider": config.a0_provider, "model": config.a0_model},
-            "a2": {"provider": config.a2_provider, "model": config.a2_model},
-            "a3": {"provider": config.a3_provider, "model": config.a3_model},
-            "a4": {"provider": config.a4_provider, "model": config.a4_model},
-            "a5": {"provider": config.a5_provider, "model": config.a5_model},
+
+@app.get("/health", response_model=HealthResponse)
+def health() -> HealthResponse:
+    return HealthResponse(
+        status="ok",
+        ollama_url=config.ollama_base_url,
+        agents={
+            "a0": AgentConfig(provider=config.a0_provider, model=config.a0_model),
+            "a2": AgentConfig(provider=config.a2_provider, model=config.a2_model),
+            "a3": AgentConfig(provider=config.a3_provider, model=config.a3_model),
+            "a4": AgentConfig(provider=config.a4_provider, model=config.a4_model),
+            "a5": AgentConfig(provider=config.a5_provider, model=config.a5_model),
         },
-    }
+    )
 
 
-@app.post("/a2/transcribe")
-async def a2_transcribe(file: UploadFile = File(...)):
+@app.post("/a2/transcribe", response_model=TranscribeResponse, response_model_exclude_none=True)
+async def a2_transcribe(file: UploadFile = File(...)) -> TranscribeResponse:
     """
     Transcreve uma imagem de linha manuscrita via A2.
 
@@ -76,10 +80,11 @@ async def a2_transcribe(file: UploadFile = File(...)):
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
-    response = {"filename": file.filename, "htr_text": text}
-    if config.debug:
-        response["debug_raw"] = raw
-    return response
+    return TranscribeResponse(
+        filename=file.filename,
+        htr_text=text,
+        debug_raw=raw if config.debug else None,
+    )
 
 
 @app.post("/pipeline/run")

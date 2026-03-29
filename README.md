@@ -121,6 +121,7 @@ RecordIndex2/
 │   ├── pipeline.py             # Coordenação do pipeline
 │   ├── config.py               # Configuração via variáveis de ambiente
 │   ├── llm_client.py           # Factory de providers (Ollama, Anthropic, OpenAI)
+│   ├── schemas.py              # Schemas Pydantic compartilhados (API responses)
 │   │
 │   ├── models/                 # Hierarquia de dados
 │   │   ├── line.py             # Linha de texto (unidade básica)
