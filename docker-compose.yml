@@ -57,9 +57,9 @@ services:
       - "-c"
       - |
         echo "Pulling models: $OLLAMA_MODELS_PULL"
-        echo "$OLLAMA_MODELS_PULL" | tr ',' '\n' | while read model; do
-          echo "==> ollama pull $model"
-          ollama pull "$model"
+        echo "$OLLAMA_MODELS_PULL" | tr ',' '\n' | while read $$model; do
+          echo "==> ollama pull $$model"
+          ollama pull "$$model"
         done
         echo "All models ready."
     restart: "no"
