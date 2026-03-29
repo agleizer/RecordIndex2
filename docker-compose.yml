@@ -1,0 +1,74 @@
+services:
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    volumes:
+      - ./src:/app/src                  # hot-reload do código em dev
+      - ./volumes/input:/data/input     # imagens de entrada
+      - ./volumes/output:/data/output   # resultados do pipeline
+      - ./volumes/samples:/data/samples # imagens de teste
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+    networks:
+      - recordindex
+
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama_data:/root/.ollama       # named volume — persiste modelos entre runs
+    ports:
+      - "11434:11434"                   # exposto no host para testes diretos
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - recordindex
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  ollama-init:
+    image: ollama/ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    env_file:
+      - .env
+    entrypoint:
+      - "/bin/sh"
+      - "-c"
+      - |
+        echo "Pulling models: $OLLAMA_MODELS_PULL"
+        echo "$OLLAMA_MODELS_PULL" | tr ',' '\n' | while read model; do
+          echo "==> ollama pull $model"
+          ollama pull "$model"
+        done
+        echo "All models ready."
+    restart: "no"
+    networks:
+      - recordindex
+
+networks:
+  recordindex:
+    driver: bridge
+
+volumes:
+  ollama_data:
