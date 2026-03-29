@@ -96,7 +96,11 @@ model = get_chat_model("openai",     "gpt-4o",             ...)
 
 O A0 pode escalar para um provider externo em runtime injetando `a2_model_override` (ou `aN_model_override`) no estado do LangGraph — sem refatorar os agentes.
 
-> **Qwen3.5 e thinking mode:** modelos da família Qwen3 têm modo *thinking* ativado por padrão, que gera tokens `<think>...</think>` antes da resposta. O `llm_client.py` passa `think=False` ao instanciar `ChatOllama` para desativar esse comportamento — necessário para que a resposta seja texto limpo.
+> **Qwen3.5 e thinking mode:** modelos da família Qwen3 têm modo *thinking* ativado por padrão. Thinking mode e structured output são **incompatíveis** (documentado pela Alibaba Cloud). Para agentes que usam `with_structured_output`, o parâmetro deve ser travado via `.bind(think=False)` antes do wrapper:
+> ```python
+> model.bind(think=False).with_structured_output(Schema, method="json_schema")
+> ```
+> Passar `think=False` só no construtor do `ChatOllama` não é suficiente — é dropado pelo wrapper.
 
 ---
 
