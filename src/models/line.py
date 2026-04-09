@@ -20,6 +20,7 @@ class Line:
     image_path: str
     htr_text: str = ""
     corrected_text: str = ""
+    page_filename: str = ""                      # preenchido por Page.add_line()
     bbox: tuple = field(default_factory=tuple)   # (x1, y1, x2, y2) — A1
     entities: dict = field(default_factory=dict) # A5 output
 
@@ -30,6 +31,7 @@ class Line:
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "page_filename": self.page_filename,
             "image_path": self.image_path,
             "htr_text": self.htr_text,
             "corrected_text": self.corrected_text,

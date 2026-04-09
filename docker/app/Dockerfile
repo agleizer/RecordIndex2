@@ -9,7 +9,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+# 1. PyTorch CPU primeiro — evita que o pip tente baixar a versão CUDA (~2GB)
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# 2. Demais dependências do projeto
 RUN pip install --no-cache-dir -r requirements.txt
+# 3. doc-ufcn sem suas deps declaradas — pina numpy==1.21.2 (conflito); em runtime
+#    usa o numpy moderno já instalado acima sem problema
+RUN pip install --no-cache-dir --no-deps doc-ufcn
 
 # src/ é montado como volume em dev; copiado em produção
 COPY src/ ./src/

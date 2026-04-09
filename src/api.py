@@ -6,10 +6,11 @@ Roda na porta 8000 dentro do container (mapeada para localhost:8000).
 
 Endpoints:
   GET  /health                  — liveness check
+  POST /a1/segment              — segmenta uma imagem de página em linhas (testa A1 isolado)
   POST /a2/transcribe           — transcreve uma imagem de linha (testa A2 isolado)
   POST /a3/segment              — segmenta lista de textos em registros (testa A3 isolado)
   POST /a5/extract              — extrai campos de um registro (testa A5 isolado)
-  POST /pipeline/run            — roda pipeline completo (A2+A3+A5) sobre volumes/samples/
+  POST /pipeline/run            — pipeline completo via A0 (classifica + A1+A2+A3+A5)
   GET  /pipeline/last-output    — retorna o último output.json gerado
 """
 
@@ -23,14 +24,17 @@ from fastapi.responses import JSONResponse
 
 from src.config import Config
 from src.llm_client import get_chat_model
+from src.agents.a1_line_segmentation import A1LineSegmentationAgent
 from src.agents.a2_htr import A2HTRAgent
 from src.agents.a3_segmentation import A3RecordSegmentationAgent
 from src.agents.a5_ner import A5NERAgent
 from src.models.collection_config import CollectionConfig
+from src.models.collection_input import CollectionInput
 from src.models.line import Line
 from src.models.record import Record
 from src.schemas import (
     HealthResponse, AgentConfig, TranscribeResponse,
+    LineSegmentInfo, SegmentPageResponse,
     SegmentRequest, SegmentResponse,
     ExtractRequest, ExtractResponse,
     PipelineRunRequest,
@@ -77,6 +81,44 @@ def health() -> HealthResponse:
             "a4": AgentConfig(provider=config.a4_provider, model=config.a4_model),
             "a5": AgentConfig(provider=config.a5_provider, model=config.a5_model),
         },
+    )
+
+
+@app.post("/a1/segment", response_model=SegmentPageResponse)
+async def a1_segment(file: UploadFile = File(...)) -> SegmentPageResponse:
+    """
+    Segmenta uma imagem de página em linhas de texto via A1 (doc-UFCN).
+
+    Body: multipart/form-data com campo 'file' contendo a imagem de página.
+    Retorna: bounding boxes das linhas detectadas e contagem total.
+    Os recortes são salvos em /data/output/lines/ dentro do container.
+    """
+    suffix = Path(file.filename).suffix if file.filename else ".png"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+
+    logger.info("A1 segment: file=%s", file.filename)
+    try:
+        agent = A1LineSegmentationAgent()
+        crops_dir = str(Path(config.output_dir) / "lines")
+        page = agent.segment_page(tmp_path, crops_dir)
+        logger.info("A1: %d linhas detectadas", len(page.lines))
+    except Exception as e:
+        logger.exception("A1 error")
+        raise HTTPException(status_code=502, detail=str(e))
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+    lines_info = [
+        LineSegmentInfo(id=line.id, bbox=list(line.bbox) if line.bbox else [])
+        for line in page.lines.values()
+    ]
+    return SegmentPageResponse(
+        filename=file.filename or "",
+        num_lines=len(page.lines),
+        lines=lines_info,
+        crops_dir=crops_dir,
     )
 
 
@@ -178,22 +220,45 @@ def a5_extract(req: ExtractRequest) -> ExtractResponse:
 @app.post("/pipeline/run")
 def pipeline_run(req: PipelineRunRequest = None):
     """
-    Executa o pipeline completo (A2 → A3 → A5) sobre volumes/samples/.
+    Executa o pipeline completo via A0Orchestrator sobre volumes/samples/.
     Salva output em volumes/output/output.json.
 
-    Body JSON opcional: { "collection_type": "batismo", "collection_name": "..." }
-    Se não enviado, usa collection_type="batismo".
+    Body JSON opcional:
+      {
+        "collection_name": "Porto da Cruz Batismos 1860",
+        "year": "1860",
+        "location": "Porto da Cruz",
+        "collection_type": "",        // vazio = A0 infere automaticamente
+        "record_start_hint": ""       // vazio = A0 usa padrão do tipo detectado
+      }
+
+    A0 classifica o tipo (batismo/casamento/obito) via keywords ou LLM,
+    chama A1 para segmentar as páginas, e coordena A2 → A3 → A5.
     """
     samples_dir = Path(config.samples_dir)
     if not samples_dir.exists():
         raise HTTPException(status_code=404, detail=f"Samples dir not found: {samples_dir}")
 
-    col_type = req.collection_type if req else "batismo"
-    col_name = (req.collection_name if req and req.collection_name else "") or samples_dir.name
-    col_config = _get_collection_config(col_type, col_name)
+    col_name = (req.collection_name if req else "") or samples_dir.name
+    col_input = CollectionInput(
+        image_dir=str(samples_dir),
+        collection_name=col_name,
+        year=req.year if req else "",
+        location=req.location if req else "",
+        collection_type=req.collection_type if req else "",
+        record_start_hint=req.record_start_hint if req else "",
+    )
 
-    logger.info("Pipeline run: dir=%s, collection_type=%s", samples_dir, col_type)
-    collection = pipeline.run_with_orchestrator(str(samples_dir), config, col_config)
+    logger.info("Pipeline run: dir=%s, collection_name=%s, type_hint=%s",
+                samples_dir, col_input.collection_name, col_input.collection_type)
+
+    try:
+        collection = pipeline.run_pipeline(config, col_input)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Pipeline error")
+        raise HTTPException(status_code=502, detail=str(e))
 
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

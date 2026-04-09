@@ -82,11 +82,44 @@ class ExtractResponse(BaseModel):
     collection_type: str
 
 
-class PipelineRunRequest(BaseModel):
+class LineSegmentInfo(BaseModel):
+    """Informação de uma linha detectada pelo A1."""
+
+    id: str
+    bbox: list[int]  # [x1, y1, x2, y2]
+
+
+class SegmentPageResponse(BaseModel):
     """
-    Request opcional para /pipeline/run — permite especificar tipo de coleção.
-    Se não enviado, o endpoint usa "batismo" como padrão.
+    Response de /a1/segment: linhas detectadas em uma imagem de página.
+
+    filename: nome do arquivo enviado.
+    num_lines: número de linhas detectadas.
+    lines: lista de bounding boxes (x1, y1, x2, y2).
+    crops_dir: diretório onde os recortes foram salvos (dentro do container).
     """
 
-    collection_type: str = "batismo"
-    collection_name: str = ""
+    filename: str
+    num_lines: int
+    lines: list[LineSegmentInfo]
+    crops_dir: str
+
+
+class PipelineRunRequest(BaseModel):
+    """
+    Request para /pipeline/run — espelha CollectionInput.
+
+    collection_name: nome legível da coleção (ex: "Porto da Cruz Batismos 1860").
+    year:            ano dos registros (ex: "1860"). Ajuda na classificação.
+    location:        localidade (ex: "Porto da Cruz, Madeira"). Ajuda na classificação.
+    collection_type: hint opcional de tipo ("batismo" | "casamento" | "obito").
+                     Se vazio, A0 infere automaticamente.
+    record_start_hint: expressão típica de início de registro (ex: "Aos").
+                       Se vazio, A0 usa o padrão do tipo detectado.
+    """
+
+    collection_name: str = "Coleção"
+    year: str = ""
+    location: str = ""
+    collection_type: str = ""        # A0 infere se vazio
+    record_start_hint: str = ""      # A0 usa padrão se vazio

@@ -9,14 +9,19 @@ services:
       - ./volumes/input:/data/input     # imagens de entrada
       - ./volumes/output:/data/output   # resultados do pipeline
       - ./volumes/samples:/data/samples # imagens de teste
+      - docufcn_models:/models/huggingface  # modelo doc-UFCN persistido
     env_file:
       - .env
+    environment:
+      - HF_HOME=/models/huggingface     # huggingface_hub lê daqui
     ports:
       - "8000:8000"
     depends_on:
       ollama:
         condition: service_healthy
       ollama-init:
+        condition: service_completed_successfully
+      docufcn-init:
         condition: service_completed_successfully
     networks:
       - recordindex
@@ -66,9 +71,26 @@ services:
     networks:
       - recordindex
 
+  docufcn-init:
+    # Baixa o modelo doc-UFCN na primeira inicialização.
+    # Execuções seguintes pulam o download (modelo já está em docufcn_models).
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    volumes:
+      - docufcn_models:/models/huggingface
+      - ./docker:/docker                        # acesso ao script de init
+    environment:
+      - HF_HOME=/models/huggingface
+    command: ["python", "/docker/docufcn_init.py"]
+    restart: "no"
+    networks:
+      - recordindex
+
 networks:
   recordindex:
     driver: bridge
 
 volumes:
   ollama_data:
+  docufcn_models:    # modelo 'generic-historical-line' do HuggingFace

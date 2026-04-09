@@ -9,3 +9,7 @@ langchain-core>=0.3.0
 langchain-ollama>=0.2.1
 langchain-anthropic>=0.2.0
 langchain-openai>=0.2.0
+# A1 — segmentação de linhas com doc-UFCN
+# doc-ufcn instalado via --no-deps no Dockerfile (pina numpy==1.21.2, incompatível)
+huggingface_hub>=0.20.0
+opencv-python-headless>=4.8.0

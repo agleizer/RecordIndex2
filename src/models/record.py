@@ -8,21 +8,25 @@ class Record:
     Registro genealógico: agrupamento de linhas que formam um único ato
     (ex: batismo, casamento, óbito).
 
-    Linhas agrupadas por A3 (segmentação de registros).
-    Saída estruturada gerada por A5 (NER).
+    lines é um dict {line.id: Line} — os mesmos objetos Line que estão em
+    Page.lines. A dupla-referência permite navegar pela hierarquia em ambas
+    as direções (Coleção→Página→Linha e Coleção→Registro→Linha).
+
+    page_filename: página onde o registro começa (primeira linha do registro).
+    Para registros que cruzam páginas, cada Line.page_filename indica sua página.
     """
 
     id: int
-    page_filename: str              # página onde o registro começa
-    lines: list = field(default_factory=list)
-    structured_output: dict = field(default_factory=dict)  # A5: {nome, pai, mãe, data}
+    page_filename: str              # página da primeira linha do registro
+    lines: dict = field(default_factory=dict)       # {line.id: Line}
+    structured_output: dict = field(default_factory=dict)   # A5: {nome, pai, mãe, data}
 
     def add_line(self, line: Line):
-        self.lines.append(line)
+        self.lines[line.id] = line
 
     def get_concatenated_text(self) -> str:
         return " ".join(
-            line.best_text for line in self.lines if line.best_text
+            line.best_text for line in self.lines.values() if line.best_text
         )
 
     def to_dict(self) -> dict:
@@ -30,6 +34,6 @@ class Record:
             "id": self.id,
             "page_filename": self.page_filename,
             "text": self.get_concatenated_text(),
-            "lines": [line.to_dict() for line in self.lines],
+            "lines": [line.to_dict() for line in self.lines.values()],
             "structured_output": self.structured_output,
         }
