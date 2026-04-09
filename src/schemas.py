@@ -105,6 +105,28 @@ class SegmentPageResponse(BaseModel):
     crops_dir: str
 
 
+class CorrectRequest(BaseModel):
+    """
+    Request para /a4/correct: texto bruto + molde de referência.
+
+    record_text:     texto HTR concatenado do registro (com erros).
+    record_template: molde com placeholders <CAMPO> e trechos <OPT>...</OPT>.
+    """
+
+    record_text: str
+    record_template: str
+
+
+class CorrectResponse(BaseModel):
+    """
+    Response de /a4/correct: texto corrigido pelo template.
+
+    corrected_text: texto com placeholders preenchidos e texto fixo preservado.
+    """
+
+    corrected_text: str
+
+
 class PipelineRunRequest(BaseModel):
     """
     Request para /pipeline/run — espelha CollectionInput.

@@ -321,6 +321,34 @@ Recebe uma lista de textos transcritos e retorna quais índices iniciam novos re
 
 ---
 
+### POST /a4/correct — corrigir texto HTR com template (testa A4)
+
+Recebe o texto bruto de um registro (saída do A2, com erros) e um molde de referência com placeholders. Retorna o texto corrigido.
+
+**Configuração no Postman:**
+- Method: `POST`
+- URL: `http://localhost:8000/a4/correct`
+- Body: `raw` → `JSON`
+
+**Body de exemplo:**
+```json
+{
+  "record_text": "AAos dezesete dias do mes dAbril do anno de mil eitocentos edessenta, pelo meio dia nesta Igreja Parochial de Nosa Senhora de Quadelupe, baptisei criança do sexo femeneno, a que dei o nome de Maria, filha lisima de Eyidio Francisco Teixeira e de sua mulher Carhota Augusta.",
+  "record_template": "Aos <DIA> dias do mês de <MES>, do anno de mil oitocentos e <ANO>, pelo <HORARIO>, n'esta Igreja Parochial Nossa Senhora de Guadelupe, baptisei a uma criança do sexo <SEXO> a que dei o nome de <PRIMEIRO_NOME>, filha legítima de <NOME_PAI> e de sua mulher <NOME_MAE>."
+}
+```
+
+**Resposta esperada:**
+```json
+{
+  "corrected_text": "Aos dezessete dias do mês de Abril, do anno de mil oitocentos e sessenta, pelo meio dia, n'esta Igreja Parochial Nossa Senhora de Guadelupe, baptisei a uma criança do sexo feminino a que dei o nome de Maria, filha legítima de Eyidio Francisco Teixeira e de sua mulher Carhota Augusta."
+}
+```
+
+Note que os nomes próprios (`Eyidio Francisco Teixeira`, `Carhota Augusta`) são preservados exatamente como aparecem no texto — A4 não corrige grafias de nomes.
+
+---
+
 ### POST /a5/extract — extrair campos de um registro (testa A5)
 
 Recebe o texto de um registro completo e extrai os campos estruturados.
@@ -421,10 +449,12 @@ Documentação interativa (Swagger): `http://localhost:8000/docs`
 | Método | Endpoint | Body | Descrição |
 |--------|----------|------|-----------|
 | GET | `/health` | — | Liveness check — retorna modelos configurados por agente |
+| POST | `/a1/segment` | `form-data: file` | Segmenta uma imagem de página em linhas (testa A1 isolado) |
 | POST | `/a2/transcribe` | `form-data: file` | Transcreve uma imagem de linha (testa A2 isolado) |
 | POST | `/a3/segment` | `{"lines": [...], "collection_type": "batismo"}` | Segmenta textos em registros (testa A3 isolado) |
+| POST | `/a4/correct` | `{"record_text": "...", "record_template": "Aos <DIA>..."}` | Corrige texto HTR usando template (testa A4 isolado) |
 | POST | `/a5/extract` | `{"record_text": "...", "collection_type": "batismo"}` | Extrai campos de um registro (testa A5 isolado) |
-| POST | `/pipeline/run` | `{"collection_type": "batismo", "collection_name": "..."}` (opcional) | Roda pipeline completo (A2→A3→A5) sobre `volumes/samples/` |
+| POST | `/pipeline/run` | `{"collection_type": "batismo", "collection_name": "...", "record_template": "..."}` | Roda pipeline completo (A1→A2→A3→A4→A5) sobre `volumes/input/` |
 | GET | `/pipeline/last-output` | — | Retorna o último `output.json` gerado |
 
 `collection_type` aceita: `batismo` \| `casamento` \| `obito`
@@ -744,6 +774,23 @@ Lista centralizada de decisões adiadas, limitações conhecidas e trabalho futu
 **Decisão:** manter hardcoded para o TCC — o corpus de avaliação é fixo (batismo, casamento, óbito). Avaliar na Semana 5 ao implementar A0. Candidato a Trabalhos Futuros.
 
 **Status:** limitação documentada, aceita para o TCC.
+
+### A0 auto-configuração completa — problema do ciclo de dependência
+
+**Visão ideal (Trabalho Futuro):** A0 deveria ser capaz de determinar sozinho não só o *tipo* da coleção, mas também os *campos de interesse* para extração — sem que o usuário precise informar nada além do diretório de imagens. Isso seria possível analisando o `record_template` (se fornecido) para inferir os campos pelos placeholders, ou transcrevendo algumas páginas e pedindo ao LLM que identifique a estrutura do documento.
+
+**O problema:** há um ciclo de dependência difícil de quebrar.
+
+- Para classificar corretamente e extrair os campos certos, o agente precisa entender o texto.
+- Para entender o texto bem (via A4), precisa do template — que é conhecimento humano.
+- Para gerar o template automaticamente, precisaria já ter transcrito e compreendido o texto.
+- A transcrição (A2) é mais confiável quando sabe o que está procurando.
+
+Em outras palavras: classificar ↔ transcrever são tarefas mutuamente dependentes. A solução ideal seria um processo iterativo (transcreve com qualidade básica → infere estrutura → refina transcrição), mas isso aumentaria significativamente a complexidade do A0 e do pipeline.
+
+**Decisão:** para o TCC, o usuário fornece `collection_type` (ou o nome deixa claro) e opcionalmente `record_template`. A0 usa essas informações como ponto de partida. A auto-configuração completa é Trabalho Futuro — e representa uma contribuição de pesquisa por si só.
+
+**Status:** registrado como débito conceitual / direção de pesquisa futura.
 
 ---
 

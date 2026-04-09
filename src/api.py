@@ -27,6 +27,7 @@ from src.llm_client import get_chat_model
 from src.agents.a1_line_segmentation import A1LineSegmentationAgent
 from src.agents.a2_htr import A2HTRAgent
 from src.agents.a3_segmentation import A3RecordSegmentationAgent
+from src.agents.a4_correction import A4CorrectionAgent
 from src.agents.a5_ner import A5NERAgent
 from src.models.collection_config import CollectionConfig
 from src.models.collection_input import CollectionInput
@@ -37,6 +38,7 @@ from src.schemas import (
     LineSegmentInfo, SegmentPageResponse,
     SegmentRequest, SegmentResponse,
     ExtractRequest, ExtractResponse,
+    CorrectRequest, CorrectResponse,
     PipelineRunRequest,
 )
 from src import pipeline
@@ -215,6 +217,38 @@ def a5_extract(req: ExtractRequest) -> ExtractResponse:
         raise HTTPException(status_code=502, detail=str(e))
 
     return ExtractResponse(fields=fields, collection_type=req.collection_type)
+
+
+@app.post("/a4/correct", response_model=CorrectResponse)
+def a4_correct(req: CorrectRequest) -> CorrectResponse:
+    """
+    Corrige um texto HTR usando um molde de referência com placeholders.
+
+    Body JSON: { "record_text": "...", "record_template": "Aos <DIA> dias..." }
+    Retorna: texto com placeholders preenchidos e texto fixo do molde preservado.
+    """
+    logger.info("A4 correct: text_len=%d, template_len=%d", len(req.record_text), len(req.record_template))
+    try:
+        model = get_chat_model(config.a4_provider, config.a4_model, config.ollama_base_url)
+        agent = A4CorrectionAgent(model)
+
+        record = Record(id=0, page_filename="")
+        line = Line(id="0", image_path="", htr_text=req.record_text)
+        record.add_line(line)
+
+        col_config = CollectionConfig(
+            collection_type="generic",
+            collection_name="",
+            record_start_hint="",
+            record_template=req.record_template,
+        )
+        corrected = agent.correct(record, col_config)
+        logger.info("A4: corrected_len=%d", len(corrected))
+    except Exception as e:
+        logger.exception("A4 error")
+        raise HTTPException(status_code=502, detail=str(e))
+
+    return CorrectResponse(corrected_text=corrected)
 
 
 @app.post("/pipeline/run")

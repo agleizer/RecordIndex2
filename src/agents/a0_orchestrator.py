@@ -11,7 +11,11 @@ Papel no sistema:
 Fluxo completo (run):
   1. _classify(collection_input)  → CollectionConfig
      Determina tipo de documento (batismo/casamento/obito) e parâmetros.
-     Prioridade: hint explícito → keyword match no nome → LLM com amostra.
+     Prioridade:
+       1. collection_type explícito → aceita direto
+       2. keyword match no collection_name → sem LLM
+       3. record_template presente → LLM analisa o template (sem HTR)
+       4. Fallback: HTR em linhas do meio de páginas aleatórias → LLM
   2. Para cada imagem de página em image_dir:
      a. A1.segment_page()          → Page com Lines (crops + bboxes)
      b. _process_page(page, cfg)   → list[Record]
@@ -148,9 +152,10 @@ class A0Orchestrator:
         Determina o tipo da coleção e constrói CollectionConfig.
 
         Prioridade:
-          1. collection_input.collection_type preenchido → usa diretamente
-          2. Keyword match no collection_name → sem chamada LLM
-          3. LLM com sample transcriptions (3 linhas da primeira página)
+          1. collection_type explícito no input → aceita direto, sem LLM
+          2. Keyword match no collection_name → sem LLM
+          3. record_template presente → LLM analisa o template (sem HTR, sem A1/A2)
+          4. Fallback: HTR em linhas de páginas aleatórias → LLM classifica
         """
         name = collection_input.collection_name
         hint_type = collection_input.collection_type.strip().lower()
@@ -166,8 +171,13 @@ class A0Orchestrator:
             logger.info("A0: tipo detectado por keyword no nome: '%s'", detected)
             return self._build_config(detected, collection_input)
 
-        # --- Prioridade 3: LLM com amostra de transcrições ---
-        logger.info("A0: tipo não inferível por keywords — amostrando com LLM...")
+        # --- Prioridade 3: LLM analisa o template (sem HTR) ---
+        if collection_input.record_template:
+            logger.info("A0: classificando via template (sem HTR)...")
+            return self._classify_from_template(collection_input)
+
+        # --- Prioridade 4: HTR em páginas aleatórias → LLM ---
+        logger.info("A0: tipo não inferível — amostrando páginas aleatórias com HTR...")
         return self._classify_with_llm(collection_input)
 
     def _keyword_match(self, name: str) -> str:
@@ -179,12 +189,58 @@ class A0Orchestrator:
                     return col_type
         return ""
 
-    def _classify_with_llm(self, collection_input: CollectionInput) -> CollectionConfig:
+    def _classify_from_template(self, collection_input: CollectionInput) -> CollectionConfig:
         """
-        Classifica usando LLM: transcreve 3 linhas da primeira página e pede ao
-        A0_MODEL que determine o tipo e o padrão de início de registro.
+        Classifica usando o record_template fornecido pelo usuário — sem HTR, sem A1/A2.
+        O LLM analisa o molde de texto e determina o tipo de registro e o padrão de início.
         """
         from langchain_core.messages import HumanMessage
+        from src.prompts import get_prompt
+
+        prompt = get_prompt("a0", "classify_from_template").format(
+            collection_name=collection_input.collection_name,
+            year=collection_input.year or "desconhecido",
+            location=collection_input.location or "desconhecido",
+            record_template=collection_input.record_template,
+        )
+        result: _ClassificationResult = self._classifier_chain.invoke(
+            [HumanMessage(content=prompt)]
+        )
+        logger.info("A0 template classify: type=%s, hint='%s', reasoning=%s",
+                    result.collection_type, result.record_start_hint, result.reasoning)
+
+        detected_type = result.collection_type.strip().lower()
+        if detected_type not in ("batismo", "casamento", "obito"):
+            raise ValueError(
+                f"A0: LLM retornou tipo inválido '{result.collection_type}' ao analisar template. "
+                "Use collection_type='batismo'|'casamento'|'obito' para forçar."
+            )
+
+        hint = collection_input.record_start_hint or result.record_start_hint
+        col_input_with_hint = CollectionInput(
+            image_dir=collection_input.image_dir,
+            collection_name=collection_input.collection_name,
+            year=collection_input.year,
+            location=collection_input.location,
+            collection_type=detected_type,
+            record_start_hint=hint,
+            record_template=collection_input.record_template,
+        )
+        return self._build_config(detected_type, col_input_with_hint)
+
+    def _classify_with_llm(self, collection_input: CollectionInput) -> CollectionConfig:
+        """
+        Fallback de classificação: transcreve linhas do meio de páginas aleatórias
+        e pede ao LLM que determine o tipo e o padrão de início de registro.
+
+        Usa páginas aleatórias (não a primeira) e linhas do meio da página
+        para evitar capas, índices e registros rasgados no início.
+        """
+        import random
+        import shutil
+        import tempfile
+        from langchain_core.messages import HumanMessage
+        from src.prompts import get_prompt
 
         image_files = sorted(
             p for p in Path(collection_input.image_dir).iterdir()
@@ -195,25 +251,31 @@ class A0Orchestrator:
                 f"A0: não foi possível classificar — nenhuma imagem em '{collection_input.image_dir}'"
             )
 
-        # Segmentar primeira página e transcrever primeiras 3 linhas
-        import tempfile, os
+        # Selecionar até 3 páginas aleatórias
+        sample_size = min(3, len(image_files))
+        sampled_pages = random.sample(image_files, sample_size)
+
         tmp_lines_dir = tempfile.mkdtemp(prefix="a0_classify_")
+        sample_lines_text = []
         try:
-            sample_page = self._a1.segment_page(str(image_files[0]), tmp_lines_dir)
-            sample_lines_text = []
-            for line in list(sample_page.lines.values())[:3]:
-                self._a2.transcribe_line(line)
-                if line.htr_text:
-                    sample_lines_text.append(line.htr_text)
+            for page_path in sampled_pages:
+                page = self._a1.segment_page(str(page_path), tmp_lines_dir)
+                lines = list(page.lines.values())
+                if not lines:
+                    continue
+                # Pegar 2 linhas do meio da página (evita cabeçalho e rodapé)
+                mid = len(lines) // 2
+                for line in lines[max(0, mid - 1): mid + 1]:
+                    self._a2.transcribe_line(line)
+                    if line.htr_text:
+                        sample_lines_text.append(line.htr_text)
         finally:
-            import shutil
             shutil.rmtree(tmp_lines_dir, ignore_errors=True)
 
         if not sample_lines_text:
             raise ValueError("A0: transcrição de amostra retornou vazio — não é possível classificar.")
 
         lines_fmt = "\n".join(f"{i}: {t}" for i, t in enumerate(sample_lines_text))
-        from src.prompts import get_prompt
         prompt = get_prompt("a0", "classify").format(
             collection_name=collection_input.collection_name,
             year=collection_input.year or "desconhecido",
@@ -244,6 +306,7 @@ class A0Orchestrator:
             location=collection_input.location,
             collection_type=detected_type,
             record_start_hint=hint,
+            record_template=collection_input.record_template,
         )
         return self._build_config(detected_type, col_input_with_hint)
 
