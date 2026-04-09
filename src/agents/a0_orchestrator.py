@@ -209,17 +209,12 @@ class A0Orchestrator:
             raise ValueError("A0: transcrição de amostra retornou vazio — não é possível classificar.")
 
         lines_fmt = "\n".join(f"{i}: {t}" for i, t in enumerate(sample_lines_text))
-        prompt = (
-            "Você é um especialista em manuscritos históricos genealógicos em português brasileiro.\n\n"
-            f"Nome da coleção: {collection_input.collection_name}\n"
-            f"Ano: {collection_input.year or 'desconhecido'}\n"
-            f"Local: {collection_input.location or 'desconhecido'}\n\n"
-            "Primeiras linhas transcritas:\n"
-            f"{lines_fmt}\n\n"
-            "Com base nesses dados, determine:\n"
-            "1. O tipo do registro: batismo, casamento ou obito\n"
-            "2. A expressão típica de início de um novo registro nesta coleção\n"
-            "3. Breve justificativa\n"
+        from src.prompts import get_prompt
+        prompt = get_prompt("a0", "classify").format(
+            collection_name=collection_input.collection_name,
+            year=collection_input.year or "desconhecido",
+            location=collection_input.location or "desconhecido",
+            lines_fmt=lines_fmt,
         )
 
         result: _ClassificationResult = self._classifier_chain.invoke(

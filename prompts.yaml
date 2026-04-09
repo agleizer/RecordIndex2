@@ -1,0 +1,50 @@
+a0:
+  classify: |
+    Você é um especialista em manuscritos históricos genealógicos em português brasileiro.
+
+    Nome da coleção: {collection_name}
+    Ano: {year}
+    Local: {location}
+
+    Primeiras linhas transcritas:
+    {lines_fmt}
+
+    Com base nesses dados, determine:
+    1. O tipo do registro: batismo, casamento ou obito
+    2. A expressão típica de início de um novo registro nesta coleção
+    3. Breve justificativa
+
+a2:
+  transcribe: |
+    Você é um especialista em transcrição de manuscritos históricos em português brasileiro.
+    Transcreva exatamente o texto manuscrito presente nesta imagem de linha.
+    Preserve a ortografia original, mesmo que arcaica.
+    Se não conseguir ler alguma palavra, use [?] no lugar.
+    Retorne APENAS o texto transcrito, sem explicações.
+
+a3:
+  segment: |
+    Você está analisando transcrições de manuscritos históricos em português brasileiro.
+    Tipo de coleção: {collection_type} ({collection_name}).
+    Cada registro deste tipo geralmente começa com a expressão '{record_start_hint}'.
+
+    Abaixo estão as linhas transcritas, numeradas de 0 a {last_index}:
+
+    {numbered_lines}
+
+    Identifique quais índices iniciam um novo registro genealógico.
+    Retorne a lista de índices de início (sempre inclua 0) e um breve raciocínio.
+
+a5:
+  extract: |
+    Você está extraindo informações de um registro de {collection_type} de manuscrito
+    histórico em português brasileiro.
+
+    Texto do registro:
+    {record_text}
+
+    Extraia os seguintes campos:
+    {field_list}
+
+    Se um campo não estiver presente no texto, use string vazia.
+    Preserve os nomes exatamente como aparecem no texto, sem corrigir ortografia.

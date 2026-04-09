@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage
 
 from src.llm_client import disable_think
 from src.models.line import Line
+from src.prompts import get_prompt
 
 
 _MEDIA_TYPES = {
@@ -27,16 +28,9 @@ class A2HTRAgent:
     Interface compatível com nós LangGraph via __call__ (para A0, Semana 5).
     """
 
-    PROMPT = (
-        "Você é um especialista em transcrição de manuscritos históricos em português brasileiro. "
-        "Transcreva exatamente o texto manuscrito presente nesta imagem de linha. "
-        "Preserve a ortografia original, mesmo que arcaica. "
-        "Se não conseguir ler alguma palavra, use [?] no lugar. "
-        "Retorne APENAS o texto transcrito, sem explicações."
-    )
-
     def __init__(self, model: BaseChatModel):
         self._model = disable_think(model)
+        self._prompt = get_prompt("a2", "transcribe").strip()
 
     def _build_message(self, image_path: str) -> HumanMessage:
         suffix = Path(image_path).suffix.lower()
@@ -45,7 +39,7 @@ class A2HTRAgent:
             image_b64 = base64.b64encode(f.read()).decode("utf-8")
         return HumanMessage(content=[
             {"type": "image_url", "image_url": {"url": f"data:image/{media_type};base64,{image_b64}"}},
-            {"type": "text", "text": self.PROMPT},
+            {"type": "text", "text": self._prompt},
         ])
 
     def transcribe(self, image_path: str) -> str:

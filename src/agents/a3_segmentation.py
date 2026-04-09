@@ -23,6 +23,7 @@ from src.llm_client import make_structured
 from src.models.collection_config import CollectionConfig
 from src.models.line import Line
 from src.models.record import Record
+from src.prompts import get_prompt
 
 
 class RecordBoundaries(BaseModel):
@@ -44,25 +45,16 @@ class RecordBoundaries(BaseModel):
 
 class A3RecordSegmentationAgent:
 
-    PROMPT_TEMPLATE = (
-        "Você está analisando transcrições de manuscritos históricos em português brasileiro.\n"
-        "Tipo de coleção: {collection_type} ({collection_name}).\n"
-        "Cada registro deste tipo geralmente começa com a expressão '{record_start_hint}'.\n\n"
-        "Abaixo estão as linhas transcritas, numeradas de 0 a {last_index}:\n\n"
-        "{numbered_lines}\n\n"
-        "Identifique quais índices iniciam um novo registro genealógico.\n"
-        "Retorne a lista de índices de início (sempre inclua 0) e um breve raciocínio."
-    )
-
     def __init__(self, model: BaseChatModel):
         self._chain = make_structured(model, RecordBoundaries)
+        self._prompt_template = get_prompt("a3", "segment")
 
     def _build_prompt(self, lines: list[Line], config: CollectionConfig) -> str:
         numbered = "\n".join(
             f"{i}: {line.best_text or '[sem texto]'}"
             for i, line in enumerate(lines)
         )
-        return self.PROMPT_TEMPLATE.format(
+        return self._prompt_template.format(
             collection_type=config.collection_type,
             collection_name=config.collection_name,
             record_start_hint=config.record_start_hint,

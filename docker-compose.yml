@@ -6,6 +6,7 @@ services:
       dockerfile: docker/app/Dockerfile
     volumes:
       - ./src:/app/src                  # hot-reload do código em dev
+      - ./prompts.yaml:/app/prompts.yaml  # prompts editáveis sem rebuild
       - ./volumes/input:/data/input     # imagens de entrada
       - ./volumes/output:/data/output   # resultados do pipeline
       - ./volumes/samples:/data/samples # imagens de teste

@@ -24,23 +24,19 @@ from pydantic import create_model
 from src.llm_client import make_structured
 from src.models.collection_config import CollectionConfig
 from src.models.record import Record
+from src.prompts import get_prompt
 
 
 class A5NERAgent:
 
-    PROMPT_TEMPLATE = (
-        "Você está extraindo informações de um registro de {collection_type} de manuscrito "
-        "histórico em português brasileiro.\n\n"
-        "Texto do registro:\n{record_text}\n\n"
-        "Extraia os seguintes campos:\n{field_list}\n\n"
-        "Se um campo não estiver presente no texto, use string vazia. "
-        "Preserve os nomes exatamente como aparecem no texto, sem corrigir ortografia."
-    )
+    MIN_TEXT_LEN = 20  # caracteres mínimos após limpeza para tentar extração
+    _NOISE_TOKENS = {"[?]", "[...]", "?", "..."}
 
     def __init__(self, model: BaseChatModel):
         # Modelo base — chain construída dinamicamente por collection_type
         self._base_model = model
         self._chain_cache: dict[str, object] = {}
+        self._prompt_template = get_prompt("a5", "extract")
 
     def _get_chain(self, collection_config: CollectionConfig):
         """
@@ -62,6 +58,13 @@ class A5NERAgent:
             self._chain_cache[key] = make_structured(self._base_model, NEROutput)
         return self._chain_cache[key]
 
+    def _is_extractable(self, text: str) -> bool:
+        """Retorna False se o texto for vazio, só ruído HTR, ou curto demais para extrair."""
+        cleaned = text.strip()
+        for token in self._NOISE_TOKENS:
+            cleaned = cleaned.replace(token, "")
+        return len(cleaned.strip()) >= self.MIN_TEXT_LEN
+
     def extract(self, record: Record, collection_config: CollectionConfig) -> dict:
         """
         Extrai campos estruturados do registro.
@@ -71,7 +74,7 @@ class A5NERAgent:
         """
         chain = self._get_chain(collection_config)
         text = record.get_concatenated_text()
-        if not text.strip():
+        if not self._is_extractable(text):
             result = {k: "" for k in collection_config.extraction_fields}
             record.structured_output = result
             return result
@@ -80,7 +83,7 @@ class A5NERAgent:
             f"- {name}: {collection_config.field_descriptions.get(name, name)}"
             for name in collection_config.extraction_fields
         )
-        prompt = self.PROMPT_TEMPLATE.format(
+        prompt = self._prompt_template.format(
             collection_type=collection_config.collection_type,
             record_text=text,
             field_list=field_list,
