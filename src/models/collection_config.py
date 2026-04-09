@@ -30,6 +30,7 @@ class CollectionConfig:
     record_start_hint: str
     extraction_fields: dict[str, type] = field(default_factory=dict)
     field_descriptions: dict[str, str] = field(default_factory=dict)
+    record_template: str = ""        # molde com placeholders para A4 — se vazio, A4 é pulado
 
     @classmethod
     def batismo(cls, name: str = "Batismos") -> "CollectionConfig":

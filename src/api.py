@@ -247,6 +247,7 @@ def pipeline_run(req: PipelineRunRequest = None):
         location=req.location if req else "",
         collection_type=req.collection_type if req else "",
         record_start_hint=req.record_start_hint if req else "",
+        record_template=req.record_template if req else "",
     )
 
     logger.info("Pipeline run: dir=%s, collection_name=%s, type_hint=%s",

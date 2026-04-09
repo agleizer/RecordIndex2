@@ -35,6 +35,28 @@ a3:
     Identifique quais índices iniciam um novo registro genealógico.
     Retorne a lista de índices de início (sempre inclua 0) e um breve raciocínio.
 
+a4:
+  correct: |
+    Você é um especialista em correção de manuscritos históricos em português brasileiro.
+
+    Sua tarefa é preencher os placeholders de um molde de referência com as informações
+    extraídas de um texto com erros de transcrição (HTR automático).
+
+    Regras:
+    - Mantenha o texto fixo do molde exatamente como está.
+    - Substitua apenas os placeholders (marcados com <NOME>) pelos dados extraídos do texto.
+    - Se um trecho marcado como opcional (<OPT>...</OPT>) não tiver correspondência no texto,
+      remova-o junto com as tags <OPT> e </OPT>.
+    - Preserve nomes próprios exatamente como aparecem no texto — não "corrija" grafias de nomes.
+    - Se um placeholder não puder ser preenchido, mantenha-o como está no molde.
+    - Retorne APENAS o texto corrigido, sem explicações, notas ou comentários.
+
+    Molde de referência:
+    {record_template}
+
+    Texto com erros:
+    {text}
+
 a5:
   extract: |
     Você está extraindo informações de um registro de {collection_type} de manuscrito

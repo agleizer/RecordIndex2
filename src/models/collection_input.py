@@ -15,12 +15,9 @@ Campos opcionais (hints — A0 infere se ausentes):
   collection_type:  "batismo" | "casamento" | "obito" — se fornecido, A0 usa diretamente
   record_start_hint: expressão típica de início de registro ("Aos")
                      se vazio, A0 usa o padrão do tipo detectado ou infere via LLM
-
-Nota sobre record_start_hint:
-  Pode ser simples ("Aos") ou um template com placeholders
-  ("Aos [DIA] dias do mês de [MES] do anno de [ANO]...").
-  O template longo é mais útil para A4 (correção estrutural) — Semana 4.
-  Para A3 (segmentação), basta a palavra inicial.
+  record_template:  molde de texto com placeholders (<CAMPO>) para A4 (correção estrutural)
+                    se vazio, A4 é pulado no pipeline
+                    ver README.md — seção "A4 — Template de correção"
 """
 
 from dataclasses import dataclass
@@ -34,3 +31,4 @@ class CollectionInput:
     location: str = ""
     collection_type: str = ""        # hint opcional — A0 infere se vazio
     record_start_hint: str = ""      # hint opcional — A0 usa padrão se vazio
+    record_template: str = ""        # molde com placeholders para A4 — se vazio, A4 é pulado

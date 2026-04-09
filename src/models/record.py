@@ -19,12 +19,16 @@ class Record:
     id: int
     page_filename: str              # página da primeira linha do registro
     lines: dict = field(default_factory=dict)       # {line.id: Line}
+    corrected_text: str = ""                        # A4: texto corrigido pelo template
     structured_output: dict = field(default_factory=dict)   # A5: {nome, pai, mãe, data}
 
     def add_line(self, line: Line):
         self.lines[line.id] = line
 
     def get_concatenated_text(self) -> str:
+        """Retorna corrected_text (A4) se disponível, senão concatena line.best_text."""
+        if self.corrected_text:
+            return self.corrected_text
         return " ".join(
             line.best_text for line in self.lines.values() if line.best_text
         )
@@ -34,6 +38,7 @@ class Record:
             "id": self.id,
             "page_filename": self.page_filename,
             "text": self.get_concatenated_text(),
+            "corrected_text": self.corrected_text,
             "lines": [line.to_dict() for line in self.lines.values()],
             "structured_output": self.structured_output,
         }

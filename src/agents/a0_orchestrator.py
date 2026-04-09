@@ -37,6 +37,7 @@ from src.llm_client import get_chat_model, make_structured
 from src.agents.a1_line_segmentation import A1LineSegmentationAgent
 from src.agents.a2_htr import A2HTRAgent
 from src.agents.a3_segmentation import A3RecordSegmentationAgent
+from src.agents.a4_correction import A4CorrectionAgent
 from src.agents.a5_ner import A5NERAgent
 from src.models.collection import Collection
 from src.models.collection_config import CollectionConfig
@@ -76,6 +77,9 @@ class A0Orchestrator:
         )
         self._a3 = A3RecordSegmentationAgent(
             get_chat_model(config.a3_provider, config.a3_model, config.ollama_base_url)
+        )
+        self._a4 = A4CorrectionAgent(
+            get_chat_model(config.a4_provider, config.a4_model, config.ollama_base_url)
         )
         self._a5 = A5NERAgent(
             get_chat_model(config.a5_provider, config.a5_model, config.ollama_base_url)
@@ -251,9 +255,11 @@ class A0Orchestrator:
             "obito":     CollectionConfig.obito,
         }
         cfg = factories[collection_type](name=collection_input.collection_name)
-        # Sobrescrever record_start_hint se o usuário forneceu um
+        # Sobrescrever hints se o usuário forneceu valores explícitos
         if collection_input.record_start_hint:
             cfg.record_start_hint = collection_input.record_start_hint
+        if collection_input.record_template:
+            cfg.record_template = collection_input.record_template
         return cfg
 
     # ------------------------------------------------------------------
@@ -278,6 +284,12 @@ class A0Orchestrator:
         logger.info("A0: A3 segmentando...")
         records = self._a3.segment(lines, collection_config, page.filename)
         logger.info("A0: %d registros identificados", len(records))
+
+        # A4: corrigir texto por template (opcional — pulado se record_template vazio)
+        if collection_config.record_template:
+            logger.info("A0: A4 corrigindo registros com template...")
+            for record in records:
+                self._a4.correct(record, collection_config)
 
         # A5: extrair campos de cada registro
         for record in records:

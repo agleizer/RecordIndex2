@@ -51,8 +51,8 @@ Imagem de página
 | A0 Orquestrador (Python puro) | ✅ Implementado (LangGraph na Semana 5) | 2 |
 | A3 Segmentação de registros | ✅ Implementado | 2 |
 | A5 NER/Extração | ✅ Implementado | 2 |
-| A1 Segmentação de linhas | 🔲 Pendente | 3 |
-| A4 Correção estrutural | 🔲 Pendente | 4 |
+| A1 Segmentação de linhas | ✅ Implementado e testado | 3 |
+| A4 Correção estrutural | ✅ Implementado (template opcional) | 3 |
 | A6 Validação | 🔲 Pendente | 4 |
 
 ---
@@ -156,22 +156,25 @@ RecordIndex2/
 
 ```
 Collection
-  └── pages: list[Page]
-        └── lines: list[Line]
+  └── pages: dict[filename → Page]
+        └── lines: dict[line.id → Line]   ← mesmo objeto referenciado em Record.lines
               ├── id: str
               ├── image_path: str
-              ├── htr_text: str          (A2)
-              ├── corrected_text: str    (A4)
-              ├── bbox: tuple            (A1)
-              └── entities: dict         (A5)
-  └── records: list[Record]
+              ├── htr_text: str            (A2)
+              ├── corrected_text: str      (A4 — linha; vazio se A4 não rodou)
+              ├── page_filename: str       (proveniência — setado por Page.add_line())
+              └── bbox: tuple              (A1)
+  └── records: dict[record.id → Record]
         ├── id: int
         ├── page_filename: str
-        ├── lines: list[Line]
-        └── structured_output: dict    (A5) {nome, pai, mãe, data}
+        ├── lines: dict[line.id → Line]   ← mesmos objetos de Page.lines
+        ├── corrected_text: str           (A4 — registro completo corrigido pelo template)
+        └── structured_output: dict       (A5) {nome, pai, mãe, data}
 ```
 
-**Diferença em relação ao v1.0:** o v1.0 usava `AVLTree` (bintrees) para acesso ordenado por filename. O v2 usa listas Python simples — a ordem é garantida pela ordem de processamento (top-to-bottom na página, que é a ordem natural de doc-UFCN).
+**Dual-referência:** os mesmos objetos `Line` aparecem tanto em `Page.lines` quanto em `Record.lines`. Isso espelha o padrão AVLTree do v1.0 — navegação possível em ambas as direções sem duplicação de dados.
+
+`Record.get_concatenated_text()` retorna `corrected_text` (A4) se disponível, senão concatena `line.best_text` (que por sua vez prefere `line.corrected_text` sobre `line.htr_text`).
 
 ---
 
@@ -566,6 +569,57 @@ O fluxo interno do pipeline em produção é:
 pipeline.py → A1 → A2 → A3 → A4 → A5 → A6
 ```
 Nenhuma chamada HTTP entre agentes — tudo em processo.
+
+---
+
+## A4 — Template de correção estrutural
+
+A4 é **opcional**. Só é executado quando o campo `record_template` é fornecido no body do `/pipeline/run`. Sem ele, o pipeline segue diretamente de A3 para A5.
+
+### O que A4 faz
+
+A4 recebe o texto HTR bruto de cada registro (saída do A2, potencialmente com erros de transcrição) e usa um **molde de referência** para produzir um texto corrigido. O LLM preenche os placeholders do molde com as informações extraídas do texto — o texto fixo do molde permanece intacto.
+
+Isso serve para dois propósitos:
+1. Normalizar a grafia de termos fixos do documento (datas por extenso, fórmulas repetitivas)
+2. Produzir texto mais limpo para o A5 extrair os campos estruturados
+
+### Formato do template
+
+Placeholders são marcados com `<NOME_DO_CAMPO>` (letras maiúsculas, sem espaço). Trechos opcionais usam `<OPT>...</OPT>` — se o texto fonte não contiver aquele trecho, o LLM o remove.
+
+**Exemplo de template para batismo (Porto da Cruz, 1860):**
+
+```
+Aos <DIA> dias do mês de <MES>, do anno de mil oitocentos e <ANO>, pelo <HORARIO>,
+n'esta Igreja Parochial Nossa Senhora de Guadelupe, freguesia do Porto da Cruz,
+Concelho de Machico, Districto Ecclesiastico, e Diocese de Funchal,
+eu o Presbytero José Augusto de Freitas Vigário da mesma freguesia,
+baptisei solenemente e pus os Santos Oleos a uma criança do sexo <SEXO>
+a que dei o nome de <PRIMEIRO_NOME>, filha legítima de <NOME_PAI> e de sua mulher <NOME_MAE>.
+<OPT>Foi padrinho <NOME_PADRINHO> e madrinha <NOME_MADRINHA>.</OPT>
+Era ut supra.
+```
+
+**Placeholders — cada coleção define os seus.** O template acima usa `<DIA>`, `<MES>`, `<ANO>` etc., mas você pode nomear como quiser. O que importa é que o LLM consiga mapear o conteúdo do texto HTR para cada placeholder.
+
+Boas práticas:
+- Use nomes descritivos (`<NOME_PAI>` é melhor que `<X2>`)
+- Inclua só o texto que realmente é fixo na coleção — variações entre registros devem virar placeholders
+- Se um campo é obrigatório, não use `<OPT>`. Se é raro ou ausente em alguns registros, use `<OPT>...<CAMPO>...</OPT>`
+
+### Como usar via API
+
+```json
+POST /pipeline/run
+{
+  "collection_name": "Porto da Cruz Batismos 1860",
+  "collection_type": "batismo",
+  "record_template": "Aos <DIA> dias do mês de <MES>, do anno de mil oitocentos e <ANO>..."
+}
+```
+
+Se `record_template` for omitido ou vazio, A4 é pulado — o pipeline roda A1→A2→A3→A5 normalmente.
 
 ---
 

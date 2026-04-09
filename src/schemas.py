@@ -123,3 +123,4 @@ class PipelineRunRequest(BaseModel):
     location: str = ""
     collection_type: str = ""        # A0 infere se vazio
     record_start_hint: str = ""      # A0 usa padrão se vazio
+    record_template: str = ""        # molde com placeholders para A4 — se vazio, A4 é pulado
