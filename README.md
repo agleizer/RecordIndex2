@@ -48,7 +48,7 @@ Imagem de página
 | Agente | Status | Semana |
 |--------|--------|--------|
 | A2 HTR multimodal | ✅ Implementado e testado | 1 |
-| A0 Orquestrador (Python puro) | ✅ Implementado (LangGraph na Semana 5) | 2 |
+| A0 Orquestrador (Python puro) | ✅ Implementado — LangGraph Trabalho Futuro | 2 |
 | A3 Segmentação de registros | ✅ Implementado | 2 |
 | A5 NER/Extração | ✅ Implementado | 2 |
 | A1 Segmentação de linhas | ✅ Implementado e testado | 3 |
@@ -77,31 +77,17 @@ O fallback é uma instância separada de A2 inicializada no construtor do A0. Se
 
 ---
 
-## Framework de coordenação — LangGraph
+## Framework de coordenação
 
-Os agentes A1–A6 são implementados como **classes Python puras** (sem dependência de framework). A coordenação e o feedback loop do A0 são implementados com **LangGraph**.
+Os agentes A1–A6 são implementados como **classes Python puras** (sem dependência de framework). O A0 coordena o pipeline e o feedback loop em Python puro — sem LangGraph.
 
-### Por que LangGraph e não Strands Agents
+### Por que não LangGraph
 
-Strands Agents (AWS, mai/2025) foi avaliado e descartado pelos seguintes motivos:
+LangGraph foi avaliado e descartado do caminho crítico. O feedback loop A6→A0→A2 já funciona via `_retry_failed_records()` em Python puro. Adicionar LangGraph seria um wrapper de framework sobre código funcional, sem impacto nos resultados ou na análise acadêmica.
 
-- **A1 não usa LLM**: é chamada de lib Python (doc-UFCN). Strands pressupõe um modelo de linguagem no centro de cada agente. LangGraph trata nós como funções Python puras, sem essa restrição.
-- **Auditabilidade acadêmica**: A0 roteia entre A3/A4 com base no feedback de A6. Com LangGraph isso é `add_conditional_edges` — o grafo é o diagrama, o código é a documentação. Com Strands, o roteamento seria decisão do LLM, não-determinístico e difícil de justificar para a banca.
-- **Maturidade**: LangGraph tem 80k+ stars, comunidade grande, documentação extensa, empresas em produção. Strands tem < 1 ano de existência e comunidade pequena.
-- **Integração Ollama**: ambos têm suporte nativo, sem vantagem decisiva de um sobre o outro.
+Cada agente implementa `__call__(state: dict) → dict`, interface compatível com nós LangGraph. Se o projeto evoluir para produto, a migração é uma refatoração de estrutura, não uma reescrita. **LangGraph está documentado como Trabalho Futuro no TCC.**
 
-### Quando LangGraph entra
-
-LangGraph é adicionado na **Semana 5** (implementação do A0). Até lá, os agentes A1–A6 são classes Python chamadas diretamente pelo `pipeline.py`. A interface de cada agente é projetada para ser compatível com nós LangGraph sem refatoração.
-
-Dependências declaradas desde já em `requirements.txt`:
-```
-langgraph
-langchain-core
-langchain-ollama
-langchain-anthropic
-langchain-openai
-```
+Strands Agents (AWS) também foi avaliado e descartado: pressupõe LLM no centro de cada agente (incompatível com A1 que é CNN puro), e o roteamento seria decisão do LLM — não-determinístico, difícil de justificar para a banca.
 
 ### Abstração de providers — `src/llm_client.py`
 
@@ -545,6 +531,58 @@ Valida os campos extraídos por A5 contra o texto original do registro.
 
 ---
 
+### POST /evaluate — avaliar output do pipeline contra ground truth
+
+Serviço separado na porta 8001. Compara o output do pipeline com o CSV arquivístico de referência. Retorna métricas de segmentação (A3) e extração (A5) em duas camadas independentes.
+
+**Pré-requisito:** serviço `eval` rodando (`docker compose up eval`).
+
+**Configuração no Postman:**
+- Method: `POST`
+- URL: `http://localhost:8001/evaluate`
+- Body: `form-data`
+
+| Campo | Tipo | Valor |
+|-------|------|-------|
+| `pipeline_json` | File | output JSON gerado pelo `/pipeline/run` |
+| `reference_csv` | File | CSV arquivístico (ex: `PortoDaCruz_Batismos_1866_4752/output.csv`) |
+| `collection_type` | Text | `batismo` |
+
+**Resposta esperada:**
+```json
+{
+  "collection_type": "batismo",
+  "segmentation": {
+    "total_gt": 128,
+    "total_output": 112,
+    "n_matched": 97,
+    "precision_seg": 0.866,
+    "recall_seg": 0.758,
+    "f1_seg": 0.808,
+    "over_segmentation_rate": 0.875
+  },
+  "extraction": {
+    "coverage": 0.758,
+    "fields": {
+      "nome": {"precision": 0.91, "recall": 0.89, "f1": 0.90, "exact_match_rate": 0.72},
+      "pai":  {"precision": 0.78, "recall": 0.76, "f1": 0.77, "exact_match_rate": 0.41},
+      "mae":  {"precision": 0.76, "recall": 0.74, "f1": 0.75, "exact_match_rate": 0.39},
+      "data": {"precision": 0.85, "recall": 0.83, "f1": 0.84, "exact_match_rate": 0.28}
+    }
+  },
+  "record_comparisons": [...],
+  "unmatched_output_ids": [3, 17, 42]
+}
+```
+
+O matching usa score composto ponderado: nome (0.40) + pai (0.35) + mãe (0.25), com Jaro-Winkler e normalização de acentos. Pré-filtro: nome JW ≥ 0.65. Threshold final: 0.80.
+
+`record_comparisons` contém, por registro alinhado: GT, output do pipeline, e comparação campo-a-campo (`exact`, `fuzzy`, `jaro_winkler`). Útil para análise qualitativa.
+
+`unmatched_output_ids` — registros do pipeline sem correspondência no GT com score ≥ threshold. Indica hipersegmentação ou alucinação.
+
+---
+
 ### GET /logs/tail — acompanhar progresso do pipeline
 
 ```
@@ -589,6 +627,13 @@ Documentação interativa (Swagger): `http://localhost:8000/docs`
 | POST | `/pipeline/run` | `{"collection_name": "...", "collection_type": "batismo", "image_dir": "/data/input", "output_formats": ["json"], ...}` | Roda pipeline completo (A1→A2→A3→A4→A5→A6), com fallback automático para registros com score < threshold |
 | GET | `/pipeline/last-output` | — | Retorna o último `output.json` gerado |
 | GET | `/logs/tail` | `?lines=100` | Retorna as últimas N linhas do log persistido |
+
+**Serviço de avaliação — porta 8001:**
+
+| Método | Endpoint | Body | Descrição |
+|--------|----------|------|-----------|
+| GET | `/health` | — | Liveness check do serviço de avaliação |
+| POST | `/evaluate` | `form-data: pipeline_json, reference_csv, collection_type` | Compara output do pipeline com CSV arquivístico — métricas P/R/F1 segmentação + extração |
 
 `collection_type` aceita: `batismo` \| `casamento` \| `obito`
 
