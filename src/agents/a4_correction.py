@@ -23,6 +23,7 @@ Por que Model-Based Reflex:
 """
 
 import logging
+import re
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
@@ -33,6 +34,19 @@ from src.models.record import Record
 from src.prompts import get_prompt
 
 logger = logging.getLogger("recordindex.a4")
+
+# Padrão de comentários adicionados pelo LLM (DT-10).
+# llama3.2 frequentemente adiciona notas após o texto corrigido, ignorando a instrução
+# "Retorne APENAS o texto corrigido". Truncamos a partir dessas marcas.
+_COMMENTARY_RE = re.compile(
+    r'\n+\s*(?:nota|observa[çc][aã]o|coment[aá]rio|obs\.?)\s*[:–-].*$',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _strip_commentary(text: str) -> str:
+    """Remove notas e comentários adicionados pelo LLM após o texto corrigido."""
+    return _COMMENTARY_RE.sub("", text).strip()
 
 
 class A4CorrectionAgent:
@@ -63,7 +77,13 @@ class A4CorrectionAgent:
             text=raw_text,
         )
         result = self._model.invoke([HumanMessage(content=prompt)])
-        corrected = result.content.strip()
+        corrected = _strip_commentary(result.content)
+
+        if len(corrected) < len(result.content.strip()):
+            logger.debug(
+                "A4: registro %d — comentário removido (%d→%d chars)",
+                record.id, len(result.content.strip()), len(corrected),
+            )
 
         record.corrected_text = corrected
         logger.info("A4: registro %d corrigido (%d chars)", record.id, len(corrected))
