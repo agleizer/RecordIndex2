@@ -94,6 +94,19 @@ class A0Orchestrator:
         self._a6 = A6ValidationAgent(
             get_chat_model(config.a6_provider, config.a6_model, config.ollama_base_url)
         )
+
+        # Fallback A2: re-transcreve registros com score abaixo do threshold
+        self._a2_fallback: A2HTRAgent | None = None
+        if config.a2_fallback_model:
+            self._a2_fallback = A2HTRAgent(
+                get_chat_model(config.a2_fallback_provider, config.a2_fallback_model, config.ollama_base_url)
+            )
+            logger.info(
+                "A0: fallback A2 configurado — %s/%s (threshold=%.2f)",
+                config.a2_fallback_provider, config.a2_fallback_model, config.a2_fallback_threshold,
+            )
+        self._fallback_threshold = config.a2_fallback_threshold
+
         self._classifier_chain = make_structured(
             get_chat_model(config.a0_provider, config.a0_model, config.ollama_base_url),
             _ClassificationResult,
@@ -407,6 +420,48 @@ class A0Orchestrator:
         for record in records:
             self._a6.validate(record, collection_config)
         logger.info("A0: [A6] concluído em %.1fs", time.time() - t_a6)
+
+        if self._a2_fallback:
+            records = self._retry_failed_records(records, collection_config)
+
+        return records
+
+    def _retry_failed_records(
+        self, records: list[Record], collection_config: CollectionConfig
+    ) -> list[Record]:
+        """
+        Re-transcreve com o modelo fallback os registros com score abaixo do threshold.
+        Depois re-executa A4 (se template presente), A5 e A6 no registro.
+        Máximo 1 retry por registro — sem loop.
+        """
+        for record in records:
+            val = record.validation
+            if not val or val.score >= self._fallback_threshold:
+                continue
+
+            logger.info(
+                "A0: [RETRY] registro %d score=%.2f < %.2f — retranscrevendo com fallback",
+                record.id, val.score, self._fallback_threshold,
+            )
+            t_retry = time.time()
+
+            for line in record.lines.values():
+                self._a2_fallback.transcribe_line(line)
+
+            # Resetar campos derivados antes de re-rodar
+            record.corrected_text = ""
+            record.structured_output = {}
+
+            if collection_config.record_template:
+                self._a4.correct(record, collection_config)
+
+            self._a5.extract(record, collection_config)
+            self._a6.validate(record, collection_config)
+
+            logger.info(
+                "A0: [RETRY] registro %d → score=%.2f verdict=%s (%.1fs)",
+                record.id, record.validation.score, record.validation.verdict, time.time() - t_retry,
+            )
 
         return records
 

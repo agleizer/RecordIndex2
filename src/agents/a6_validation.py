@@ -104,21 +104,35 @@ class A6ValidationAgent:
             issues.append("começa com minúscula — possível erro HTR")
         if any(c.isdigit() for c in v):
             issues.append("contém dígitos — provável erro HTR")
+        if len(v.split()) > 7:
+            issues.append("palavras demais para um nome — provável HTR ruidoso")
+        # Nome não deve conter indicadores de data
+        v_lower = v.lower()
+        if any(ind in v_lower for ind in _DATE_INDICATORS if len(ind) > 2):
+            issues.append("contém expressão de data — possível confusão de campo")
         return issues
 
     def _check_date_field(self, value: str) -> list[str]:
+        issues = []
         v = value.lower()
         if not any(ind in v for ind in _DATE_INDICATORS):
-            return ["sem referência temporal reconhecível"]
-        return []
+            issues.append("sem referência temporal reconhecível")
+        if len(value) > 60:
+            issues.append("texto longo demais para uma data — provável HTR ruidoso incluído")
+        return issues
 
     def _check_grounded(self, value: str, record_text: str) -> list[str]:
-        """Verifica se alguma palavra significativa do valor aparece no texto fonte."""
+        """
+        Verifica se a maioria das palavras significativas do valor aparece no texto fonte.
+        Exige >= 50% das palavras encontradas (não apenas uma) para evitar falso grounding
+        com HTR ruidoso onde qualquer fragmento pode aparecer por acaso.
+        """
         words = [w for w in value.split() if len(w) > self._GROUNDING_MIN_WORD]
         if not words:
             return []  # valor muito curto — não há como verificar
         text_lower = record_text.lower()
-        if not any(w.lower() in text_lower for w in words):
+        found = sum(1 for w in words if w.lower() in text_lower)
+        if found / len(words) < 0.5:
             return ["valor não encontrado no texto fonte — possível alucinação"]
         return []
 
@@ -154,6 +168,15 @@ class A6ValidationAgent:
 
             if errors:
                 field_errors[field_name] = errors
+
+        # Cross-field: pai e mae não podem ser iguais ou quase iguais
+        pai = record.structured_output.get("pai", "").strip().lower()
+        mae = record.structured_output.get("mae", "").strip().lower()
+        if pai and mae and pai == mae:
+            msg = "pai e mãe com valor idêntico — provável erro de extração"
+            field_errors.setdefault("pai", []).append(msg)
+            field_errors.setdefault("mae", []).append(msg)
+            score -= self.SCORE_SUSPICIOUS * 2
 
         return max(0.0, round(score, 2)), field_errors
 

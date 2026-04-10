@@ -57,6 +57,26 @@ Imagem de página
 
 ---
 
+## Mecanismo de fallback A6→A0→A2
+
+O A6 atribui um score 0–1 a cada registro extraído. Quando o score fica abaixo de `A2_FALLBACK_THRESHOLD` (padrão: 0.5), o A0 interpreta isso como sinal de transcrição HTR insuficiente e retranscreve as linhas do registro usando o modelo fallback configurado em `A2_FALLBACK_MODEL`.
+
+```
+A2 (gemma4:e4b) → A3 → A4 → A5 → A6 → score < 0.5?
+                                           │
+                                    sim ───┘
+                                           ↓
+                              A2 (claude-sonnet-4-6) → A4 → A5 → A6
+```
+
+O fallback é uma instância separada de A2 inicializada no construtor do A0. Se `A2_FALLBACK_MODEL` estiver vazio, o mecanismo é desabilitado e o pipeline segue normalmente.
+
+**Por que isso importa academicamente:** é o comportamento que caracteriza A0 como agente **goal-based** — o objetivo é maximizar qualidade dos registros extraídos, e A0 ajusta seus atuadores (escolha de modelo A2) com base na medida de performance (score A6). Sem isso, A0 seria apenas um orquestrador sequencial.
+
+**Custo:** o fallback só aciona quando necessário — a maioria dos registros passa com o modelo local. Claude Sonnet é chamado apenas para os registros genuinamente difíceis (manuscritos degradados, caligrafia atípica).
+
+---
+
 ## Framework de coordenação — LangGraph
 
 Os agentes A1–A6 são implementados como **classes Python puras** (sem dependência de framework). A coordenação e o feedback loop do A0 são implementados com **LangGraph**.
@@ -131,6 +151,7 @@ RecordIndex2/
 │   ├── schemas.py              # Schemas Pydantic compartilhados (API responses)
 │   ├── prompts.py              # Loader singleton de prompts.yaml (get_prompt("a3","segment"))
 │   ├── logging_config.py       # setup_logging() — RotatingFileHandler + console
+│   ├── output_writer.py        # write_outputs() — json/csv/txt com nome {colecao}_{timestamp}
 │   │
 │   ├── models/                 # Hierarquia de dados
 │   │   ├── line.py             # Linha de texto (unidade básica, dual-referenciada)
@@ -217,7 +238,7 @@ docker compose up --build
 O Compose vai executar na seguinte ordem:
 1. Build do container `app`
 2. Sobe `ollama` e aguarda até ficar saudável
-3. `ollama-init` baixa todos os modelos de `OLLAMA_MODELS_PULL` (na primeira execução pode demorar — `qwen3.5:9b` tem ~6.6 GB)
+3. `ollama-init` baixa todos os modelos de `OLLAMA_MODELS_PULL` (na primeira execução pode demorar — `gemma4:e4b` tem ~9 GB, `llama3.2` tem ~2 GB)
 4. Somente após o download completo, o `app` sobe
 
 Acompanhe os logs do download:
@@ -257,7 +278,8 @@ Resposta esperada:
   "ollama_url": "http://ollama:11434",
   "agents": {
     "a0": {"provider": "ollama", "model": "llama3.2"},
-    "a2": {"provider": "ollama", "model": "qwen3.5:9b"},
+    "a2": {"provider": "ollama", "model": "gemma4:e4b"},
+    "a2_fallback": {"provider": "anthropic", "model": "claude-sonnet-4-6"},
     "a3": {"provider": "ollama", "model": "llama3.2"},
     "a4": {"provider": "ollama", "model": "llama3.2"},
     "a5": {"provider": "ollama", "model": "llama3.2"},
@@ -436,20 +458,34 @@ Processa todas as imagens de **página** no diretório especificado. A1 segmenta
   "collection_type": "batismo",
   "image_dir": "/data/input",
   "record_template": "",
-  "record_start_hint": ""
+  "record_start_hint": "",
+  "output_formats": ["json", "csv"]
 }
 ```
 
 Todos os campos são opcionais:
 - `collection_type`: `"batismo"` | `"casamento"` | `"obito"` — se vazio, A0 infere automaticamente
 - `image_dir`: diretório de imagens dentro do container (padrão: `SAMPLES_DIR` do `.env`)
-- `record_template`: molde com placeholders `<CAMPO>` para ativar A4 (se vazio, A4 é pulado)
-- `record_start_hint`: expressão de início de registro (ex: `"Aos"`) — se vazio, usa padrão do tipo
+- `record_template`: molde com placeholders `<CAMPO>` para ativar A4 (se vazio, A4 é pulado). As primeiras 12 palavras do template também são usadas como `record_start_hint` automaticamente
+- `record_start_hint`: expressão de início de registro — se vazio e `record_template` preenchido, extraído automaticamente do template
+- `output_formats`: lista de formatos de saída — `"json"` | `"csv"` | `"txt"` (padrão: `["json"]`)
 - `year` e `location`: metadados que auxiliam A0 na classificação
 
-**Resposta:** JSON completo da Collection com todos os Records, campos extraídos e resultado de validação (score A6). O mesmo JSON é salvo em `volumes/output/output.json`.
+**Resposta:** JSON completo da Collection com todos os Records, campos extraídos e resultado de validação (score A6). Os arquivos de saída são salvos em `volumes/output/` com nome `{colecao}_{YYYY-MM-DD_HH-MM}.{ext}`.
 
-> **Atenção:** o pipeline é síncrono — a request bloqueia até terminar. Com qwen3.5:9b, cada linha demora ~40s. Uma página com 30 linhas leva ~20 minutos. Acompanhe o progresso em tempo real via `GET /logs/tail`.
+```json
+{
+  "total_pages": 3,
+  "total_lines": 108,
+  "total_records": 14,
+  "output_files": {
+    "json": "porto_da_cruz_batismos_1866_2026-04-10_14-23.json",
+    "csv":  "porto_da_cruz_batismos_1866_2026-04-10_14-23.csv"
+  }
+}
+```
+
+> **Atenção:** o pipeline é síncrono — a request bloqueia até terminar. Com gemma4:e4b, cada linha demora ~15–25s. Uma página com 30 linhas leva ~10–15 minutos. Registros com score A6 < 0.5 são automaticamente retranscritos com o modelo fallback (Claude Sonnet). Acompanhe o progresso em tempo real via `GET /logs/tail`.
 
 ---
 
@@ -459,7 +495,7 @@ Todos os campos são opcionais:
 GET http://localhost:8000/pipeline/last-output
 ```
 
-Retorna o `output.json` da última execução do pipeline. Útil para inspecionar resultados sem re-executar.
+Retorna o JSON mais recente gerado pelo pipeline (determinado por data de modificação do arquivo). Útil para inspecionar resultados sem re-executar.
 
 Retorna 404 se nenhum pipeline tiver rodado ainda.
 
@@ -516,13 +552,19 @@ Os logs incluem marcadores de progresso por agente:
 ```
 ── PÁGINA 1/3 ──
 [A1] 36 linhas em 2.34s
-[A2] linha_0001.jpg → 'Aos oito dias do mes de...' (41.2s)
+[A2] linha_0001.jpg → 'Aos oito dias do mes de...' (18.4s)
 [A3] 8 registros, starts=[0,4,8,...] (12.1s)
 [A4] pulado (sem template)
 [A5] record 0 → {nome: Pedro, pai: João...} (8.3s)
 [A6] score=0.92 (ok) (1.1s)
-══ PIPELINE CONCLUÍDO ══ 3 páginas | 108 linhas | 22 registros | 1847.3s total
+[A6] score=0.38 (failed) (1.2s)
+[RETRY] registro 3 score=0.38 < 0.50 — retranscrevendo com fallback (anthropic/claude-sonnet-4-6)
+[A2] linha_0021.jpg → 'Aos vinte e dois dias...' (3.1s)
+[A6] score=0.81 (ok) (1.0s)
+══ PIPELINE CONCLUÍDO ══ 3 páginas | 108 linhas | 14 registros | 612.4s total
 ```
+
+O marcador `[RETRY]` indica ativação do mecanismo de fallback — A0 detectou score A6 abaixo do threshold e retranscreveu as linhas do registro usando o modelo alternativo.
 
 ---
 
@@ -539,7 +581,7 @@ Documentação interativa (Swagger): `http://localhost:8000/docs`
 | POST | `/a4/correct` | `{"record_text": "...", "record_template": "Aos <DIA>..."}` | Corrige texto HTR usando template (testa A4 isolado) |
 | POST | `/a5/extract` | `{"record_text": "...", "collection_type": "batismo"}` | Extrai campos de um registro (testa A5 isolado) |
 | POST | `/a6/validate` | `{"record_text": "...", "structured_output": {...}, "collection_type": "batismo"}` | Valida campos extraídos (score 0–1, verdict, field_errors) |
-| POST | `/pipeline/run` | `{"collection_name": "...", "collection_type": "batismo", "image_dir": "/data/input", ...}` | Roda pipeline completo (A1→A2→A3→A4→A5→A6) |
+| POST | `/pipeline/run` | `{"collection_name": "...", "collection_type": "batismo", "image_dir": "/data/input", "output_formats": ["json"], ...}` | Roda pipeline completo (A1→A2→A3→A4→A5→A6), com fallback automático para registros com score < threshold |
 | GET | `/pipeline/last-output` | — | Retorna o último `output.json` gerado |
 | GET | `/logs/tail` | `?lines=100` | Retorna as últimas N linhas do log persistido |
 
@@ -577,11 +619,14 @@ cp .env.example .env
 | Variável | Valor padrão | Descrição |
 |----------|--------------|-----------|
 | `OLLAMA_BASE_URL` | `http://ollama:11434` | URL do serviço Ollama |
-| `OLLAMA_MODELS_PULL` | `qwen3.5:9b,llama3.2` | Modelos a baixar no startup (comma-separated) |
+| `OLLAMA_MODELS_PULL` | `gemma4:e4b,llama3.2` | Modelos a baixar no startup (comma-separated) |
 | `A0_PROVIDER` | `ollama` | Provider do orquestrador (`ollama` \| `anthropic` \| `openai`) |
 | `A0_MODEL` | `llama3.2` | Modelo do orquestrador |
 | `A2_PROVIDER` | `ollama` | Provider do HTR (deve ser VLM com suporte a imagem) |
-| `A2_MODEL` | `qwen3.5:9b` | Modelo do HTR |
+| `A2_MODEL` | `gemma4:e4b` | Modelo do HTR |
+| `A2_FALLBACK_PROVIDER` | _(vazio)_ | Provider do fallback HTR — ativado quando score A6 < threshold |
+| `A2_FALLBACK_MODEL` | _(vazio)_ | Modelo fallback HTR (ex: `claude-sonnet-4-6`). Vazio = fallback desabilitado |
+| `A2_FALLBACK_THRESHOLD` | `0.5` | Score A6 abaixo do qual o fallback é acionado (0.0–1.0) |
 | `A3_PROVIDER` | `ollama` | Provider da segmentação de registros |
 | `A3_MODEL` | `llama3.2` | Modelo da segmentação de registros |
 | `A4_PROVIDER` | `ollama` | Provider da correção estrutural |
