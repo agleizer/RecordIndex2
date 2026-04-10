@@ -88,6 +88,18 @@ services:
     networks:
       - recordindex
 
+  eval:
+    # Serviço de avaliação offline — compara output do pipeline com índice arquivístico.
+    # Sem GPU, sem Ollama, sem dependências pesadas.
+    # Porta 8001 — Swagger em http://localhost:8001/docs
+    build:
+      context: .
+      dockerfile: evaluation/Dockerfile
+    ports:
+      - "8001:8001"
+    networks:
+      - recordindex
+
 networks:
   recordindex:
     driver: bridge

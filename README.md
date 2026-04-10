@@ -171,8 +171,13 @@ RecordIndex2/
 │       ├── a5_ner.py           # A5: NER via schema Pydantic dinâmico
 │       └── a6_validation.py    # A6: validação rule-based + lazy LLM + grounding check
 │
-├── evaluation/                 # Módulo de avaliação offline (≠ pipeline)
-│   └── __init__.py
+├── evaluation/                 # Serviço de avaliação offline — porta 8001
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── app.py              # FastAPI: POST /evaluate
+│   ├── csv_parser.py       # Parse do CSV arquivístico (batismo)
+│   ├── matcher.py          # Alinhamento por score composto nome+pai+mae (JW)
+│   └── metrics.py          # segmentation_metrics(), extraction_metrics(), compare_field()
 │
 └── volumes/                    # Dados de execução (bind mounts, gitignored)
     ├── input/                  # Imagens de páginas para processar
@@ -692,14 +697,77 @@ O `docker-compose.yml` já configura o Ollama para usar todas as GPUs NVIDIA dis
 
 ---
 
-## Módulo de avaliação (offline)
+## Módulo de avaliação (serviço separado)
 
-O módulo `evaluation/` **não faz parte do pipeline** (A0–A6). É executado separadamente após o pipeline para comparar o output JSON com o ground truth CSV.
+O módulo `evaluation/` é um **serviço Docker independente** (porta 8001) que compara o output do pipeline com o índice arquivístico da coleção. Não faz parte do pipeline A0–A6 e não usa Ollama nem GPU.
 
-Ground truth: arquivos `output.csv` por coleção, com campos `nome, pai, mãe, data`.
-Métricas: Precision, Recall, F1 por campo; Jaro-Winkler para nomes.
+Swagger: `http://localhost:8001/docs`
 
-Documentação completa: `02_desenvolvimento/2026_03_23_protocolo_avaliacao/protocolo_avaliacao.md`
+### POST /evaluate — comparar pipeline com índice arquivístico
+
+```
+POST http://localhost:8001/evaluate
+Content-Type: multipart/form-data
+  pipeline_json : arquivo JSON gerado pelo /pipeline/run
+  reference_csv : CSV de referência da coleção (índice arquivístico)
+  collection_type : "batismo" | "casamento" | "obito" (default: batismo)
+```
+
+**Formato do CSV de referência (batismo):**
+```
+PT/ABM/PMCH04/001/00025/000001; Registo de batismo n.º 1: Maria. Pai: Romano de Freitas Silva; Mãe: Constantina Narcisa de Nóbrega; 1866-01-01
+```
+
+**Estrutura da resposta:**
+```json
+{
+  "segmentation": {
+    "total_gt": 128,
+    "total_output": 14,
+    "matched": 12,
+    "unmatched_gt": 116,
+    "unmatched_output": 2,
+    "precision": 0.857,
+    "recall": 0.094,
+    "f1": 0.170,
+    "over_segmentation_rate": 0.109
+  },
+  "extraction": {
+    "_coverage": 0.857,
+    "nome": {"tp": 10, "fp": 1, "fn": 1, "precision": 0.91, "recall": 0.91, "f1": 0.91, "exact_match_rate": 0.7},
+    "pai":  {"..."},
+    "mae":  {"..."},
+    "data": {"..."}
+  },
+  "record_comparisons": [
+    {
+      "gt_seq": 1,
+      "gt": {"nome": "Maria", "pai": "Romano de Freitas Silva", ...},
+      "matched": true,
+      "match_score_nome": 1.0,
+      "output_record_id": 0,
+      "output": {"nome": "Maria", "pai": "Romano de Freitas", ...},
+      "field_comparison": {
+        "nome": {"present": true, "exact": true, "fuzzy": true, "jaro_winkler": 1.0},
+        "mae":  {"present": true, "exact": false, "fuzzy": true, "jaro_winkler": 0.965},
+        "data": {"present": true, "exact": false, "fuzzy": true, "date_detail": {"month_match": true, ...}}
+      }
+    }
+  ]
+}
+```
+
+### Métricas em duas camadas
+
+**Camada 1 — Segmentação (mede A3):** calculada sobre `total_gt` vs `total_output`, independente de extração. `recall_seg` baixo quando processamos apenas parte das páginas da coleção — normal.
+
+**Camada 2 — Extração (mede A5):** calculada **apenas** sobre pares alinhados (match_score_nome ≥ 0.82). `_coverage` = fração do GT com alinhamento confiável. Registros não-alinhados não entram no F1 de extração — a taxa de não-alinhamento é informação em si.
+
+**Alinhamento:** best-match por `nome` com Jaro-Winkler. Não é posicional — funciona mesmo quando A3 fragmenta ou mescla registros. Normaliza acentos e capitalização antes de comparar.
+
+**Data:** comparação por mês (extrai mês do texto português extraído vs. mês do ISO GT). `exact_match_rate` reporta casos onde A5 extraiu data em formato ISO diretamente.
+
+Documentação do protocolo completo: `02_desenvolvimento/2026_03_23_protocolo_avaliacao/protocolo_avaliacao.md`
 
 ---
 
@@ -900,95 +968,15 @@ Lista centralizada de decisões adiadas, limitações conhecidas e trabalho futu
 
 **Status:** limitação documentada, workaround aceito para o TCC.
 
-### Módulo de avaliação — `evaluation/` (Semana 4)
+### Módulo de avaliação — `evaluation/` ✅ Implementado (Semana 4)
 
-**Problema:** o pipeline gera `output.json` mas não há nada que compare o resultado com o ground truth e calcule métricas objetivas. Sem isso, a avaliação do TCC é apenas qualitativa.
+Ver seção **"Módulo de avaliação (serviço separado)"** acima para documentação completa de uso.
 
-**O que implementar:**
+O módulo resolve o problema de métricas posicionais: alinhamento por score composto nome+pai+mae (Jaro-Winkler ponderado) desacopla extração de posição. Métricas em duas camadas independentes (segmentação / extração). Serviço Docker na porta 8001.
 
-```
-evaluation/
-├── evaluator.py        # Comparação output.json × ground_truth.csv → métricas
-├── metrics.py          # Precision, Recall, F1, exact match, Jaro-Winkler, segmentação
-├── matcher.py          # Estratégias de alinhamento output ↔ GT (ver abaixo)
-└── run_evaluation.py   # Entry point CLI: python -m evaluation.run_evaluation
-```
+### Output nomeado por coleção e timestamp ✅ Implementado (Semana 4)
 
-**Inputs:**
-- `output.json` — saída do pipeline (gerado por `/pipeline/run`)
-- `ground_truth.csv` — CSV por coleção com campos `nome, pai, mae, data` (já existente em `_iniciacao/`)
-
-**Outputs:**
-- Métricas de segmentação (A3): over-segmentation rate, under-segmentation rate
-- Métricas de extração (A5): Precision, Recall, F1 por campo — condicional a alinhamento confiável
-- Exact match rate por campo
-- Jaro-Winkler para campos de nome (tolerância a erros HTR)
-- Relatório em JSON e CSV, com e sem registros flagados
-
----
-
-#### Problema central: métricas posicionais quebram com hipersegmentação
-
-O matching ingênuo (registro N do output = linha N do GT) colapsa quando A3 hipersegmenta. Se o GT tem N registros e o output tem 2N, o registro correto N+1 fica alinhado com o GT N+1 errado — e a partir daí tudo desalinha em cascata. Isso penaliza A5 por erros de A3, misturando dois problemas distintos:
-
-1. **Qualidade de segmentação** (A3): A3 acertou os boundaries?
-2. **Qualidade de extração** (A5): dado um registro, A5 extraiu os campos corretos?
-
-Medir os dois com a mesma métrica posicional produz números impossíveis de interpretar academicamente.
-
-**Abordagens a avaliar (em ordem de complexidade):**
-
-**Opção A — Posicional com filtro de confiança (mais simples):**
-Matching posicional padrão, mas antes de calcular métricas de extração, filtra registros flagados (`too_short`, `no_start_hint`, `a6_failed`). Mede dois cenários: "todos os registros" e "apenas registros com alta confiança". Não resolve o desalinhamento, mas isola o efeito.
-
-**Opção B — Best-match por campo-âncora (intermediário):**
-Para cada registro do GT, percorre todos os records do output e encontra o que maximiza Jaro-Winkler no campo `nome`. Se o score for acima de um threshold (ex: 0.85), alinha esse par e compara os demais campos. Desacopla extração de posição. Pressuposto: `nome` foi extraído razoavelmente pelo A5 — pode falhar quando A2 alucionou gravemente.
-
-**Opção C — Métricas de segmentação separadas (recomendado para o TCC):**
-Medir A3 e A5 de forma independente:
-- *Segmentation recall*: que fração dos registros do GT tem ao menos um output record cujo texto concatenado contém o `nome` do GT? (detectou o registro, mesmo que dividido)
-- *Segmentation precision*: que fração dos output records corresponde a um registro real e não é fragmento?
-- *Over-segmentation rate*: `len(output_records) / len(gt_records)` — ideal = 1.0
-- *Extraction F1*: calculado apenas sobre pares que conseguiram ser alinhados com Opção B
-
-Essa separação permite dizer "A3 tem recall de 80% mas over-segmentation de 1.8× — A5 tem F1 de 0.72 nos registros corretamente segmentados" — o que é muito mais útil academicamente do que um único número que mistura tudo.
-
-**Decisão:** implementar Opção A como baseline (rápido, suficiente para uma primeira leitura) e Opção C para a versão final do TCC. Opção B como fallback se C for muito complexa de implementar.
-
----
-
-#### Guardrails de segmentação — flags no output
-
-Para suportar as métricas acima, adicionar campo `flags: list[str]` em `Record` (não no pipeline de produção, mas como metadado opcional do avaliador ou do A0 pós-processamento):
-
-| Flag | Condição | Significado |
-|---|---|---|
-| `too_short` | `len(record.lines) < 4` | Provável fragmento |
-| `no_start_hint` | Nenhuma linha contém `record_start_hint` | Boundary suspeito |
-| `a6_failed` | `validation.verdict == "failed"` | A6 identificou problema grave |
-| `possible_merge` | `len(record.lines) > 15` | Possível fusão de dois registros |
-
-O avaliador pode filtrar por flags e comparar métricas com/sem — dá uma leitura de "melhor caso" vs. "caso real".
-
-**Por que não faz parte do pipeline:** é ferramenta acadêmica de avaliação offline, não parte do sistema. Não deve interferir nos agentes A0–A6.
-
-**Status:** pendente — Semana 4. É o entregável acadêmico mais importante para a defesa. Design das métricas (Opção A vs. C) a decidir no início da semana.
-
----
-
-### Output nomeado por coleção e timestamp
-
-**Problema:** o pipeline sempre salva em `output.json`, sobrescrevendo o resultado anterior. Impossível comparar execuções diferentes ou manter histórico de experimentos.
-
-**O que deveria ser:** `{collection_name}_{YYYY-MM-DD_HH-MM}.json`
-
-Exemplo: `PortoDaCruz_Batismos_1866_2026-04-09_14-32.json`
-
-**Onde mudar:** `src/api.py` → `pipeline_run()` — linha que define `output_path`. Também deveria retornar o nome do arquivo na resposta JSON para o cliente saber onde buscar.
-
-**Decisão:** pequena mudança, alto valor. Implementar junto com o módulo de avaliação na Semana 4 — o avaliador precisa localizar o arquivo de output por nome.
-
-**Status:** pendente — Semana 4.
+`src/output_writer.py` — `write_outputs()`. Formato: `{colecao}_{YYYY-MM-DD_HH-MM}.{ext}`. Ativado via `output_formats` no body de `/pipeline/run`.
 
 ---
 
