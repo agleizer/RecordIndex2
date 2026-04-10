@@ -127,6 +127,36 @@ class CorrectResponse(BaseModel):
     corrected_text: str
 
 
+class ValidateRequest(BaseModel):
+    """
+    Request para /a6/validate: campos extraídos + texto original + tipo de coleção.
+
+    record_text:      texto concatenado do registro (HTR bruto ou corrigido).
+    structured_output: campos extraídos pelo A5 {nome, pai, mãe, data, ...}.
+    collection_type:  "batismo" | "casamento" | "obito"
+    """
+
+    record_text: str
+    structured_output: dict[str, str]
+    collection_type: str = "batismo"
+
+
+class ValidateResponse(BaseModel):
+    """
+    Response de /a6/validate: resultado da validação do registro.
+
+    score:        0.0 (falhou) a 1.0 (perfeito)
+    verdict:      "ok" | "needs_review" | "failed"
+    field_errors: {campo: [lista de erros/avisos]}
+    notes:        análise do LLM (vazio se score >= 0.8)
+    """
+
+    score: float
+    verdict: str
+    field_errors: dict[str, list[str]]
+    notes: str
+
+
 class PipelineRunRequest(BaseModel):
     """
     Request para /pipeline/run — espelha CollectionInput.
@@ -146,3 +176,4 @@ class PipelineRunRequest(BaseModel):
     collection_type: str = ""        # A0 infere se vazio
     record_start_hint: str = ""      # A0 usa padrão se vazio
     record_template: str = ""        # molde com placeholders para A4 — se vazio, A4 é pulado
+    image_dir: str = ""              # diretório de imagens — se vazio, usa SAMPLES_DIR do config

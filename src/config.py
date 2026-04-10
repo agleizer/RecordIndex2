@@ -23,6 +23,8 @@ class Config:
     a4_model: str
     a5_provider: str
     a5_model: str
+    a6_provider: str
+    a6_model: str
 
     # API keys para providers externos (opcionais — só necessários se provider != "ollama")
     anthropic_api_key: str
@@ -50,6 +52,8 @@ class Config:
             a4_model=os.getenv("A4_MODEL", "llama3.2"),
             a5_provider=os.getenv("A5_PROVIDER", "ollama"),
             a5_model=os.getenv("A5_MODEL", "llama3.2"),
+            a6_provider=os.getenv("A6_PROVIDER", "ollama"),
+            a6_model=os.getenv("A6_MODEL", "llama3.2"),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
             input_dir=os.getenv("INPUT_DIR", "/data/input"),

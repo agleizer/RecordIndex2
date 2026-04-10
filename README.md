@@ -53,7 +53,7 @@ Imagem de página
 | A5 NER/Extração | ✅ Implementado | 2 |
 | A1 Segmentação de linhas | ✅ Implementado e testado | 3 |
 | A4 Correção estrutural | ✅ Implementado (template opcional) | 3 |
-| A6 Validação | 🔲 Pendente | 4 |
+| A6 Validação | ✅ Implementado | 3 |
 
 ---
 
@@ -109,7 +109,8 @@ O A0 pode escalar para um provider externo em runtime injetando `a2_model_overri
 
 ```
 RecordIndex2/
-├── docker-compose.yml          # Serviços: app, ollama, ollama-init
+├── docker-compose.yml          # Serviços: app, ollama, ollama-init, docufcn-init
+├── prompts.yaml                # Prompts de todos os agentes (montado como volume)
 ├── .env                        # Configuração local (gitignored)
 ├── .env.example                # Template de configuração (commitado)
 ├── .gitignore
@@ -117,37 +118,45 @@ RecordIndex2/
 ├── requirements.txt
 │
 ├── docker/
-│   └── app/
-│       └── Dockerfile          # Container da aplicação Python
+│   ├── app/
+│   │   └── Dockerfile          # Container da aplicação Python
+│   └── docufcn_init.py         # Script de download do modelo doc-UFCN (roda uma vez)
 │
 ├── src/
 │   ├── api.py                  # API HTTP (FastAPI) — porta 8000
 │   ├── main.py                 # Ponto de entrada CLI
-│   ├── pipeline.py             # run() e run_with_orchestrator()
+│   ├── pipeline.py             # run_pipeline(config, collection_input) → Collection
 │   ├── config.py               # Configuração via variáveis de ambiente
-│   ├── llm_client.py           # Factory de providers (Ollama, Anthropic, OpenAI)
+│   ├── llm_client.py           # Factory de providers + make_structured() + disable_think()
 │   ├── schemas.py              # Schemas Pydantic compartilhados (API responses)
+│   ├── prompts.py              # Loader singleton de prompts.yaml (get_prompt("a3","segment"))
+│   ├── logging_config.py       # setup_logging() — RotatingFileHandler + console
 │   │
 │   ├── models/                 # Hierarquia de dados
-│   │   ├── line.py             # Linha de texto (unidade básica)
+│   │   ├── line.py             # Linha de texto (unidade básica, dual-referenciada)
 │   │   ├── page.py             # Página do manuscrito
 │   │   ├── record.py           # Registro genealógico (grupo de linhas)
 │   │   ├── collection.py       # Coleção de documentos
-│   │   └── collection_config.py  # Tipo de coleção + campos de extração (batismo/casamento/obito)
+│   │   ├── collection_config.py  # Contrato A0↔agentes: campos, hints, template
+│   │   ├── collection_input.py   # Input bruto do usuário para A0
+│   │   └── validation_result.py  # ValidationResult(score, verdict, field_errors, notes)
 │   │
 │   └── agents/
-│       ├── a2_htr.py           # A2: transcrição via Ollama VLM
-│       ├── a3_segmentation.py  # A3: segmentação de linhas em registros
-│       ├── a5_ner.py           # A5: extração de campos via schema Pydantic dinâmico
-│       └── a0_orchestrator.py  # A0: coordena A2 → A3 → A5 (LangGraph na Semana 5)
+│       ├── a0_orchestrator.py  # A0: classifica coleção, orquestra A1→A6
+│       ├── a1_line_segmentation.py  # A1: doc-UFCN, lazy load, filtro MIN_DIM=32
+│       ├── a2_htr.py           # A2: HTR multimodal via VLM (sem structured output)
+│       ├── a3_segmentation.py  # A3: segmentação de linhas em registros genealógicos
+│       ├── a4_correction.py    # A4: correção estrutural via template (ativação condicional)
+│       ├── a5_ner.py           # A5: NER via schema Pydantic dinâmico
+│       └── a6_validation.py    # A6: validação rule-based + lazy LLM + grounding check
 │
 ├── evaluation/                 # Módulo de avaliação offline (≠ pipeline)
 │   └── __init__.py
 │
 └── volumes/                    # Dados de execução (bind mounts, gitignored)
-    ├── input/                  # Imagens de entrada
-    ├── output/                 # Resultados do pipeline (JSON)
-    └── samples/                # Imagens de amostra para testes
+    ├── input/                  # Imagens de páginas para processar
+    ├── output/                 # Resultados (output.json) e logs (logs/pipeline.log)
+    └── samples/                # Imagens de amostra para testes rápidos
 ```
 
 ---
@@ -161,15 +170,16 @@ Collection
               ├── id: str
               ├── image_path: str
               ├── htr_text: str            (A2)
-              ├── corrected_text: str      (A4 — linha; vazio se A4 não rodou)
+              ├── corrected_text: str      (vazio — A4 opera no nível do Record, não da Line)
               ├── page_filename: str       (proveniência — setado por Page.add_line())
               └── bbox: tuple              (A1)
   └── records: dict[record.id → Record]
         ├── id: int
         ├── page_filename: str
         ├── lines: dict[line.id → Line]   ← mesmos objetos de Page.lines
-        ├── corrected_text: str           (A4 — registro completo corrigido pelo template)
-        └── structured_output: dict       (A5) {nome, pai, mãe, data}
+        ├── corrected_text: str           (A4 — texto corrigido pelo template; vazio se A4 não rodou)
+        ├── structured_output: dict       (A5) {nome, pai, mãe, data, ...}
+        └── validation: dict              (A6) {score, verdict, field_errors, notes}
 ```
 
 **Dual-referência:** os mesmos objetos `Line` aparecem tanto em `Page.lines` quanto em `Record.lines`. Isso espelha o padrão AVLTree do v1.0 — navegação possível em ambas as direções sem duplicação de dados.
@@ -250,7 +260,8 @@ Resposta esperada:
     "a2": {"provider": "ollama", "model": "qwen3.5:9b"},
     "a3": {"provider": "ollama", "model": "llama3.2"},
     "a4": {"provider": "ollama", "model": "llama3.2"},
-    "a5": {"provider": "ollama", "model": "llama3.2"}
+    "a5": {"provider": "ollama", "model": "llama3.2"},
+    "a6": {"provider": "ollama", "model": "llama3.2"}
   }
 }
 ```
@@ -405,28 +416,40 @@ Recebe o texto de um registro completo e extrai os campos estruturados.
 
 ---
 
-### POST /pipeline/run — pipeline completo A2→A3→A5
+### POST /pipeline/run — pipeline completo A1→A2→A3→(A4)→A5→A6
 
-Processa todas as imagens em `volumes/samples/`, executa A2 (HTR) → A3 (segmentação) → A5 (extração) e salva o resultado em `volumes/output/output.json`.
+Processa todas as imagens de **página** no diretório especificado. A1 segmenta cada página em linhas, A2 transcreve cada linha, A3 agrupa em registros, A4 corrige (se template fornecido), A5 extrai campos, A6 valida. Salva o resultado em `volumes/output/output.json`.
 
-**Pré-requisito:** colocar imagens de linha em `volumes/samples/` (um arquivo por linha, em ordem).
+**Pré-requisito:** colocar imagens de **página** em `volumes/input/` (ou `volumes/samples/`). Não precisa pré-segmentar em linhas — A1 faz isso.
 
 **Configuração no Postman:**
 - Method: `POST`
 - URL: `http://localhost:8000/pipeline/run`
-- Body: `raw` → `JSON` (opcional — se omitido usa `batismo`)
+- Body: `raw` → `JSON`
 
-**Body (opcional):**
+**Body completo:**
 ```json
 {
+  "collection_name": "Porto da Cruz Batismos 1866",
+  "year": "1866",
+  "location": "Porto da Cruz, Madeira",
   "collection_type": "batismo",
-  "collection_name": "Batismos São Paulo 1850"
+  "image_dir": "/data/input",
+  "record_template": "",
+  "record_start_hint": ""
 }
 ```
 
-**Resposta:** JSON completo da Collection com todos os Records e campos extraídos. O mesmo JSON é salvo em `volumes/output/output.json`.
+Todos os campos são opcionais:
+- `collection_type`: `"batismo"` | `"casamento"` | `"obito"` — se vazio, A0 infere automaticamente
+- `image_dir`: diretório de imagens dentro do container (padrão: `SAMPLES_DIR` do `.env`)
+- `record_template`: molde com placeholders `<CAMPO>` para ativar A4 (se vazio, A4 é pulado)
+- `record_start_hint`: expressão de início de registro (ex: `"Aos"`) — se vazio, usa padrão do tipo
+- `year` e `location`: metadados que auxiliam A0 na classificação
 
-> **Atenção:** o pipeline é síncrono — a request bloqueia até terminar. Para 10 imagens de linha com qwen3.5:9b, espere ~5–7 minutos.
+**Resposta:** JSON completo da Collection com todos os Records, campos extraídos e resultado de validação (score A6). O mesmo JSON é salvo em `volumes/output/output.json`.
+
+> **Atenção:** o pipeline é síncrono — a request bloqueia até terminar. Com qwen3.5:9b, cada linha demora ~40s. Uma página com 30 linhas leva ~20 minutos. Acompanhe o progresso em tempo real via `GET /logs/tail`.
 
 ---
 
@@ -442,20 +465,83 @@ Retorna 404 se nenhum pipeline tiver rodado ainda.
 
 ---
 
+### POST /a6/validate — validar campos extraídos (testa A6)
+
+Valida os campos extraídos por A5 contra o texto original do registro.
+
+**Configuração no Postman:**
+- Method: `POST`
+- URL: `http://localhost:8000/a6/validate`
+- Body: `raw` → `JSON`
+
+**Body de exemplo:**
+```json
+{
+  "record_text": "Aos vinte dias do mez de janeiro de mil oitocentos e cinquenta, na matriz de São Paulo, baptizei a Pedro, filho legítimo de João da Silva e de Maria Antonia.",
+  "structured_output": {
+    "nome": "Pedro",
+    "pai": "João da Silva",
+    "mae": "Maria Antonia",
+    "data": "vinte dias do mez de janeiro de mil oitocentos e cinquenta"
+  },
+  "collection_type": "batismo"
+}
+```
+
+**Resposta esperada:**
+```json
+{
+  "score": 1.0,
+  "verdict": "ok",
+  "field_errors": {},
+  "notes": ""
+}
+```
+
+`verdict` retorna: `"ok"` (score ≥ 0.8) | `"needs_review"` (0.5–0.8) | `"failed"` (< 0.5)
+
+`notes` é preenchido com análise do LLM apenas quando `score < 0.8`.
+
+---
+
+### GET /logs/tail — acompanhar progresso do pipeline
+
+```
+GET http://localhost:8000/logs/tail?lines=100
+```
+
+Retorna as últimas N linhas do arquivo de log persistido (`volumes/output/logs/pipeline.log`). Útil para monitorar pipelines longos sem acessar o container.
+
+Os logs incluem marcadores de progresso por agente:
+```
+── PÁGINA 1/3 ──
+[A1] 36 linhas em 2.34s
+[A2] linha_0001.jpg → 'Aos oito dias do mes de...' (41.2s)
+[A3] 8 registros, starts=[0,4,8,...] (12.1s)
+[A4] pulado (sem template)
+[A5] record 0 → {nome: Pedro, pai: João...} (8.3s)
+[A6] score=0.92 (ok) (1.1s)
+══ PIPELINE CONCLUÍDO ══ 3 páginas | 108 linhas | 22 registros | 1847.3s total
+```
+
+---
+
 ## API — referência rápida
 
 Documentação interativa (Swagger): `http://localhost:8000/docs`
 
 | Método | Endpoint | Body | Descrição |
 |--------|----------|------|-----------|
-| GET | `/health` | — | Liveness check — retorna modelos configurados por agente |
+| GET | `/health` | — | Liveness check — retorna modelos configurados por agente (A0–A6) |
 | POST | `/a1/segment` | `form-data: file` | Segmenta uma imagem de página em linhas (testa A1 isolado) |
 | POST | `/a2/transcribe` | `form-data: file` | Transcreve uma imagem de linha (testa A2 isolado) |
 | POST | `/a3/segment` | `{"lines": [...], "collection_type": "batismo"}` | Segmenta textos em registros (testa A3 isolado) |
 | POST | `/a4/correct` | `{"record_text": "...", "record_template": "Aos <DIA>..."}` | Corrige texto HTR usando template (testa A4 isolado) |
 | POST | `/a5/extract` | `{"record_text": "...", "collection_type": "batismo"}` | Extrai campos de um registro (testa A5 isolado) |
-| POST | `/pipeline/run` | `{"collection_type": "batismo", "collection_name": "...", "record_template": "..."}` | Roda pipeline completo (A1→A2→A3→A4→A5) sobre `volumes/input/` |
+| POST | `/a6/validate` | `{"record_text": "...", "structured_output": {...}, "collection_type": "batismo"}` | Valida campos extraídos (score 0–1, verdict, field_errors) |
+| POST | `/pipeline/run` | `{"collection_name": "...", "collection_type": "batismo", "image_dir": "/data/input", ...}` | Roda pipeline completo (A1→A2→A3→A4→A5→A6) |
 | GET | `/pipeline/last-output` | — | Retorna o último `output.json` gerado |
+| GET | `/logs/tail` | `?lines=100` | Retorna as últimas N linhas do log persistido |
 
 `collection_type` aceita: `batismo` \| `casamento` \| `obito`
 
@@ -502,11 +588,14 @@ cp .env.example .env
 | `A4_MODEL` | `llama3.2` | Modelo da correção estrutural |
 | `A5_PROVIDER` | `ollama` | Provider do NER/extração |
 | `A5_MODEL` | `llama3.2` | Modelo do NER/extração |
+| `A6_PROVIDER` | `ollama` | Provider da validação |
+| `A6_MODEL` | `llama3.2` | Modelo da validação (lazy — só chamado quando score < 0.8) |
 | `ANTHROPIC_API_KEY` | _(vazio)_ | Necessário se qualquer provider for `anthropic` |
 | `OPENAI_API_KEY` | _(vazio)_ | Necessário se qualquer provider for `openai` |
 | `INPUT_DIR` | `/data/input` | Diretório de imagens de entrada (dentro do container) |
 | `OUTPUT_DIR` | `/data/output` | Diretório de saída (dentro do container) |
 | `SAMPLES_DIR` | `/data/samples` | Imagens de amostra para teste (dentro do container) |
+| `DEBUG` | `false` | `true` ativa `debug_raw` nas respostas do A2 e logging httpx verboso |
 
 ---
 
@@ -689,6 +778,25 @@ Campos de extração por tipo padrão:
 | `casamento` | noivo, noiva, pai_noivo, mae_noivo, pai_noiva, mae_noiva, data |
 | `obito` | nome (pessoa falecida), pai, mae, data, idade |
 
+### Como A0 classifica a coleção
+
+A0 determina o tipo da coleção (`batismo` | `casamento` | `obito`) em 4 prioridades em cascata, parando na primeira que funcionar:
+
+| Prioridade | Condição | Custo | Método |
+|---|---|---|---|
+| 1 | `collection_type` explícito no body | Zero | Aceita direto |
+| 2 | Keyword no `collection_name` (ex: "Batismos") | Zero | Match em dicionário interno |
+| 3 | `record_template` presente | LLM (sem HTR) | Analisa o molde |
+| 4 | Nenhuma das anteriores | A1 + A2 + LLM | HTR em páginas aleatórias |
+
+**Prioridade 3** é a mais importante na prática: se o usuário forneceu um template, o LLM consegue inferir o tipo lendo os placeholders e o texto fixo do molde — sem precisar segmentar ou transcrever nenhuma imagem.
+
+**Prioridade 4** usa `random.sample()` para selecionar até 3 páginas aleatórias (não a primeira, que pode ser capa ou índice) e transcreve 2 linhas do meio de cada página (evita cabeçalho e rodapé).
+
+Após classificar, A0 constrói o `CollectionConfig` adequado e orquestra o pipeline completo.
+
+---
+
 ### Como A3 usa CollectionConfig
 
 A3 recebe todas as linhas transcritas de uma página e chama o LLM **uma vez** com o contexto da coleção (tipo + `record_start_hint`). O modelo retorna os índices de início de cada registro (`RecordBoundaries`) — não agrupa, apenas detecta fronteiras. O agente faz o corte determinístico.
@@ -777,9 +885,7 @@ Lista centralizada de decisões adiadas, limitações conhecidas e trabalho futu
 
 ### A0 auto-configuração completa — problema do ciclo de dependência
 
-**Visão ideal (Trabalho Futuro):** A0 deveria ser capaz de determinar sozinho não só o *tipo* da coleção, mas também os *campos de interesse* para extração — sem que o usuário precise informar nada além do diretório de imagens. Isso seria possível analisando o `record_template` (se fornecido) para inferir os campos pelos placeholders, ou transcrevendo algumas páginas e pedindo ao LLM que identifique a estrutura do documento.
-
-**O problema:** há um ciclo de dependência difícil de quebrar.
+**Problema:** há um ciclo de dependência difícil de quebrar.
 
 - Para classificar corretamente e extrair os campos certos, o agente precisa entender o texto.
 - Para entender o texto bem (via A4), precisa do template — que é conhecimento humano.
@@ -791,6 +897,96 @@ Em outras palavras: classificar ↔ transcrever são tarefas mutuamente dependen
 **Decisão:** para o TCC, o usuário fornece `collection_type` (ou o nome deixa claro) e opcionalmente `record_template`. A0 usa essas informações como ponto de partida. A auto-configuração completa é Trabalho Futuro — e representa uma contribuição de pesquisa por si só.
 
 **Status:** registrado como débito conceitual / direção de pesquisa futura.
+
+---
+
+## Débitos Técnicos — Pós-avaliação do 2º E2E (09/04/2026)
+
+> **Contexto:** segundo teste E2E completo, 3 páginas reais da coleção PortoDaCruz Batismos 1866 (arquivos `_0002`, `_0003`, `_0004`). 108 linhas segmentadas, 22 registros gerados, score médio A6 = **0.42** (ok: 1 / needs_review: 8 / failed: 13). Pipeline estava com todos os agentes ativos (A1→A2→A3→A5→A6, A4 inativo por ausência de template). Data do teste: 09/04/2026. Ponto do desenvolvimento: fim da Semana 3, todos os agentes A1–A6 implementados.
+
+---
+
+### DT-06 — Qualidade HTR (A2): qwen3.5:9b alucina em manuscrito cursivo histórico
+
+**Descoberto em:** 09/04/2026 — segundo E2E com 3 páginas reais.
+
+**Problema:** qwen3.5:9b produz alucinações graves quando a imagem de linha é ambígua ou de baixa qualidade:
+- Gerou texto em **cirílico** (russo) para uma linha de manuscrito português: `"Дода деловодовъ и въ дѣлѣ ревизии"`
+- Gerou linguagem **coloquial moderna**: `"acho que é bem provável que a gente vá ter"`
+- Inventou **anos e meses inexistentes**: `"18 de Lymasbo de 1831"`, `"18?? (infelizmente não sei qual ano)"`
+- Copiou estruturas de frases modernas sem relação com o conteúdo do manuscrito
+
+**Impacto:** quando A2 alucina, tudo downstream é comprometido — A3 segmenta errado, A5 extrai campos errados, A6 dá score alto a campos inventados (o valor existe no texto alucinado, passa no grounding check). Efeito cascata total.
+
+**Causa provável:** qwen3.5:9b não foi treinado em manuscritos históricos cursivos do século XIX em português. Para imagens de baixa legibilidade, o modelo "completa" o texto com o que faz sentido para ele estatisticamente — que não é o conteúdo do manuscrito.
+
+**Sugestões de correção:**
+1. **Trocar o modelo base (prioritário):** testar `minicpm-v:8b`, `llava:13b`, `qwen2.5vl:7b` — comparar CER em amostra manual de 10 linhas com ground truth. A hipótese é que o problema é específico do qwen3.5:9b e outros VLMs podem ser mais conservadores.
+2. **Prompt de contenção:** adicionar instrução explícita no prompt A2 para retornar `[ilegível]` quando não conseguir transcrever com confiança, em vez de inventar. Avaliar se o modelo respeita essa instrução.
+3. **Filtro de alucinação pós-HTR:** detectar sinais de alucinação no resultado do A2 — presença de caracteres não-latinos, proporção de palavras do dicionário português, comprimento anômalo em relação ao bbox. Rejeitar e marcar como `[ilegível]`.
+4. **Fine-tuning (Trabalho Futuro):** fine-tune de VLM em corpus anotado de manuscritos luso-brasileiros. Fora do escopo do TCC mas é a solução definitiva.
+
+**Status:** limitação crítica — impacta diretamente a qualidade do output. A ser atacada na Semana 4 com experimento de modelos alternativos.
+
+---
+
+### DT-07 — A3: hipersegmentação — registros de 2 linhas são quase sempre fragmentos
+
+**Descoberto em:** 09/04/2026 — segundo E2E.
+
+**Problema:** das 22 registros gerados, vários têm apenas 2 linhas. Um batismo de 1866 em formato completo tem 6–10 linhas (data, nome, filiação, padrinhos, celebrante). Registros de 2 linhas quase invariavelmente são:
+- Fragmento do final de um registro anterior (DT-01 — quebra de página)
+- Linha marginal/número de registro isolado (ex: `"N. 1."`, `"=4.º"`)
+- Texto que o A2 aluciou, criando dois fragmentos sem coerência
+
+A3 está sendo conservador demais — prefere criar muitos registros pequenos a arriscar fundir dois registros reais.
+
+**Impacto:** A5 e A6 trabalham em vão em registros espúrios. Score médio cai por registros inviáveis.
+
+**Sugestões de correção:**
+1. **Tamanho mínimo de registro:** pós-processamento em A0 — descartar registros com menos de N linhas (ex: < 4) e registrar como `fragmento` no output. Simples de implementar, sem custo LLM.
+2. **Prompt do A3 com restrição explícita:** adicionar ao prompt que um registro de batismo tem tipicamente 5–8 linhas, e que fragmentos de 1–2 linhas devem ser agrupados ao registro anterior se não houver marcador claro de início.
+3. **Sliding window (ver DT-A3 existente):** abordagem mais robusta, mas mais cara.
+
+**Status:** limitação documentada. Correção simples (tamanho mínimo) pode ser implementada em Semana 4 como pós-processamento.
+
+---
+
+### DT-08 — A0/A3: primeira página pode ser frontispício ou termo de abertura
+
+**Descoberto em:** 09/04/2026 — segundo E2E. Página `_0002` é o **termo de abertura do livro** ("Será este Livro para o registo paroquial dos Baptismos..."), não registros reais. A3 tentou segmentá-la como batismos, gerando 5 registros espúrios (Rec 0–4).
+
+**Problema:** A0 envia todas as páginas indiscriminadamente para A1→A2→A3. Não há filtro para páginas introdutórias, índices, termos de encerramento ou páginas em branco.
+
+**Impacto:** registros espúrios inflam o total, derrubam o score médio, poluem o output.
+
+**Sugestões de correção:**
+1. **Filtro de página via LLM:** após A2, antes de A3, pedir ao LLM se a página contém "registros genealógicos individuais" ou "texto administrativo/introdutório". Se for administrativo, marcar como `skip_record_segmentation=True` e não chamar A3. Custo: 1 chamada LLM por página.
+2. **Heurística por marcador de início:** se nenhuma linha da página contém o `record_start_hint` da coleção ("Aos X dias", "Em nome de Deus"), a página provavelmente é administrativa. Zero custo LLM.
+3. **Campo `page_type` no modelo de dados:** `Page` poderia ter `page_type: "records" | "cover" | "administrative" | "unknown"`. A0 seta isso antes de chamar A3.
+
+**Status:** limitação identificada. Heurística por marcador de início (opção 2) é a mais simples e pode ser implementada em Semana 4 sem custo adicional.
+
+---
+
+### DT-09 — A6: score=1.0 em campos semanticamente errados (grounding insuficiente)
+
+**Descoberto em:** 09/04/2026 — Rec 17: `nome="Malta"`, `pai="Malhabita"`, `data="18 de Lymasbo de 1831"`. Score A6 = **1.0 (ok)**.
+
+**Problema:** o grounding check atual verifica apenas se o valor extraído **aparece no texto fonte**. Isso é necessário mas não suficiente. "Malta" aparece no texto → grounding passa. Mas "Malta" é um adjetivo do texto, não um nome de pessoa. "Lymasbo" é um mês inexistente inventado pelo A2 → aparece no texto (alucinado) → grounding passa.
+
+**Raiz do problema:** o A6 não distingue entre:
+- Valor extraído corretamente de texto correto
+- Valor extraído corretamente de texto alucinado
+- Valor extraído incorretamente de texto correto (ex: extraiu adjetivo como nome)
+
+**Sugestões de correção:**
+1. **Validação de padrão por campo:** nomes devem ser palavras capitalizadas (regex), datas devem conter padrão temporal reconhecível (mês em português, ano com 4 dígitos). Valores que não batem com o padrão esperado do campo recebem penalidade independentemente do grounding.
+2. **Verificação de nomes contra léxico:** palavras de nome extraído que não são nomes próprios comuns em português do século XIX (lista de ~200 nomes comuns) recebem flag de suspeito.
+3. **Grounding estrito:** verificar não só se o valor aparece no texto, mas se aparece em posição coerente com o campo. "Malta" no contexto de "como malhabita" não é uma posição de nome de batizado.
+4. **Score composto:** combinar score de regras com score do LLM quando LLM foi chamado — agora são usados separadamente (regras determinam se LLM é chamado, LLM produz notas mas não altera score).
+
+**Status:** limitação de design do A6. Validação de padrão por campo (opção 1) é implementável em Semana 4 sem custo LLM. Léxico e grounding estrito são Trabalho Futuro.
 
 ---
 

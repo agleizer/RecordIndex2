@@ -29,6 +29,7 @@ from src.agents.a2_htr import A2HTRAgent
 from src.agents.a3_segmentation import A3RecordSegmentationAgent
 from src.agents.a4_correction import A4CorrectionAgent
 from src.agents.a5_ner import A5NERAgent
+from src.agents.a6_validation import A6ValidationAgent
 from src.models.collection_config import CollectionConfig
 from src.models.collection_input import CollectionInput
 from src.models.line import Line
@@ -39,15 +40,17 @@ from src.schemas import (
     SegmentRequest, SegmentResponse,
     ExtractRequest, ExtractResponse,
     CorrectRequest, CorrectResponse,
+    ValidateRequest, ValidateResponse,
     PipelineRunRequest,
 )
 from src import pipeline
+from src.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+config = Config.from_env()
+_log_file = setup_logging(output_dir=config.output_dir)
 logger = logging.getLogger("recordindex.api")
 
 app = FastAPI(title="RecordIndex 2.0", version="0.1.0")
-config = Config.from_env()
 
 
 def _get_collection_config(collection_type: str, collection_name: str = "") -> CollectionConfig:
@@ -251,6 +254,39 @@ def a4_correct(req: CorrectRequest) -> CorrectResponse:
     return CorrectResponse(corrected_text=corrected)
 
 
+@app.post("/a6/validate", response_model=ValidateResponse)
+def a6_validate(req: ValidateRequest) -> ValidateResponse:
+    """
+    Valida os campos extraídos de um registro genealógico.
+
+    Body JSON: { "record_text": "...", "structured_output": {...}, "collection_type": "batismo" }
+    Retorna: score (0–1), verdict (ok/needs_review/failed), field_errors, notes (LLM se score < 0.8).
+    """
+    logger.info("A6 validate: collection_type=%s", req.collection_type)
+    try:
+        col_config = _get_collection_config(req.collection_type)
+        model = get_chat_model(config.a6_provider, config.a6_model, config.ollama_base_url)
+        agent = A6ValidationAgent(model)
+
+        record = Record(id=0, page_filename="")
+        line = Line(id="0", image_path="", htr_text=req.record_text)
+        record.add_line(line)
+        record.structured_output = dict(req.structured_output)
+
+        result = agent.validate(record, col_config)
+        logger.info("A6: score=%.2f verdict=%s", result.score, result.verdict)
+    except Exception as e:
+        logger.exception("A6 error")
+        raise HTTPException(status_code=502, detail=str(e))
+
+    return ValidateResponse(
+        score=result.score,
+        verdict=result.verdict,
+        field_errors=result.field_errors,
+        notes=result.notes,
+    )
+
+
 @app.post("/pipeline/run")
 def pipeline_run(req: PipelineRunRequest = None):
     """
@@ -269,13 +305,15 @@ def pipeline_run(req: PipelineRunRequest = None):
     A0 classifica o tipo (batismo/casamento/obito) via keywords ou LLM,
     chama A1 para segmentar as páginas, e coordena A2 → A3 → A5.
     """
-    samples_dir = Path(config.samples_dir)
-    if not samples_dir.exists():
-        raise HTTPException(status_code=404, detail=f"Samples dir not found: {samples_dir}")
+    # Diretório de imagens: req.image_dir > samples_dir (fallback)
+    requested_dir = req.image_dir.strip() if req and req.image_dir else ""
+    image_dir = Path(requested_dir) if requested_dir else Path(config.samples_dir)
+    if not image_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Image dir not found: {image_dir}")
 
-    col_name = (req.collection_name if req else "") or samples_dir.name
+    col_name = (req.collection_name if req else "") or image_dir.name
     col_input = CollectionInput(
-        image_dir=str(samples_dir),
+        image_dir=str(image_dir),
         collection_name=col_name,
         year=req.year if req else "",
         location=req.location if req else "",
@@ -285,7 +323,7 @@ def pipeline_run(req: PipelineRunRequest = None):
     )
 
     logger.info("Pipeline run: dir=%s, collection_name=%s, type_hint=%s",
-                samples_dir, col_input.collection_name, col_input.collection_type)
+                image_dir, col_input.collection_name, col_input.collection_type)
 
     try:
         collection = pipeline.run_pipeline(config, col_input)
@@ -303,6 +341,25 @@ def pipeline_run(req: PipelineRunRequest = None):
         json.dump(result, f, ensure_ascii=False, indent=2)
 
     return JSONResponse(content=result)
+
+
+@app.get("/logs/tail")
+def logs_tail(lines: int = 100):
+    """
+    Retorna as últimas N linhas do arquivo de log persistido.
+    Útil para monitorar o pipeline sem acessar o container.
+
+    Query param: ?lines=100 (padrão)
+    """
+    if not _log_file.exists():
+        raise HTTPException(status_code=404, detail="Arquivo de log ainda não criado.")
+    try:
+        with open(_log_file, encoding="utf-8") as f:
+            all_lines = f.readlines()
+        tail = all_lines[-lines:]
+        return {"log_file": str(_log_file), "total_lines": len(all_lines), "tail": tail}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/pipeline/last-output")

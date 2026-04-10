@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass, field
 from src.models.line import Line
 
@@ -18,9 +19,10 @@ class Record:
 
     id: int
     page_filename: str              # página da primeira linha do registro
-    lines: dict = field(default_factory=dict)       # {line.id: Line}
-    corrected_text: str = ""                        # A4: texto corrigido pelo template
-    structured_output: dict = field(default_factory=dict)   # A5: {nome, pai, mãe, data}
+    lines: dict = field(default_factory=dict)             # {line.id: Line}
+    corrected_text: str = ""                              # A4: texto corrigido pelo template
+    structured_output: dict = field(default_factory=dict) # A5: {nome, pai, mãe, data}
+    validation: object = None                             # A6: ValidationResult (None se não rodou)
 
     def add_line(self, line: Line):
         self.lines[line.id] = line
@@ -41,4 +43,5 @@ class Record:
             "corrected_text": self.corrected_text,
             "lines": [line.to_dict() for line in self.lines.values()],
             "structured_output": self.structured_output,
+            "validation": self.validation.to_dict() if self.validation else None,
         }

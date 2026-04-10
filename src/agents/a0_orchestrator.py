@@ -22,6 +22,7 @@ Fluxo completo (run):
         i.  A2.transcribe_line()   por linha
         ii. A3.segment()           → agrupamento em Records
         iii.A5.extract()           por Record
+        iv. A6.validate()          por Record
   3. Retorna Collection completa.
 
 Interface LangGraph (Semana 5):
@@ -32,6 +33,7 @@ Feedback loop A6→A0→A3 (Semana 5): não implementado aqui.
 """
 
 import logging
+import time
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -43,6 +45,7 @@ from src.agents.a2_htr import A2HTRAgent
 from src.agents.a3_segmentation import A3RecordSegmentationAgent
 from src.agents.a4_correction import A4CorrectionAgent
 from src.agents.a5_ner import A5NERAgent
+from src.agents.a6_validation import A6ValidationAgent
 from src.models.collection import Collection
 from src.models.collection_config import CollectionConfig
 from src.models.collection_input import CollectionInput
@@ -88,6 +91,9 @@ class A0Orchestrator:
         self._a5 = A5NERAgent(
             get_chat_model(config.a5_provider, config.a5_model, config.ollama_base_url)
         )
+        self._a6 = A6ValidationAgent(
+            get_chat_model(config.a6_provider, config.a6_model, config.ollama_base_url)
+        )
         self._classifier_chain = make_structured(
             get_chat_model(config.a0_provider, config.a0_model, config.ollama_base_url),
             _ClassificationResult,
@@ -126,20 +132,35 @@ class A0Orchestrator:
         lines_dir.mkdir(parents=True, exist_ok=True)
 
         collection = Collection(name=collection_config.collection_name)
+        total_pages = len(image_files)
+        pipeline_start = time.time()
 
-        for image_path in image_files:
-            logger.info("A0: processando página '%s'", image_path.name)
+        for page_idx, image_path in enumerate(image_files, start=1):
+            logger.info(
+                "A0: ── PÁGINA %d/%d ── '%s'",
+                page_idx, total_pages, image_path.name,
+            )
+            t0 = time.time()
+
+            logger.info("A0: [A1] segmentando linhas...")
             page = self._a1.segment_page(str(image_path), str(lines_dir))
             collection.add_page(page)
+            logger.info("A0: [A1] %d linhas detectadas (%.1fs)", len(page.lines), time.time() - t0)
 
             records = self._process_page(page, collection_config)
             for record in records:
                 collection.add_record(record)
 
+            logger.info(
+                "A0: ── PÁGINA %d/%d concluída — %d registros (%.1fs total) ──",
+                page_idx, total_pages, len(records), time.time() - t0,
+            )
+
+        elapsed = time.time() - pipeline_start
         logger.info(
-            "A0: pipeline concluído — %d páginas, %d registros",
-            len(collection.pages),
-            len(collection.records),
+            "A0: ══ PIPELINE CONCLUÍDO ══ %d páginas | %d registros | %.1fs total (%.1fs/pág)",
+            len(collection.pages), len(collection.records),
+            elapsed, elapsed / max(total_pages, 1),
         )
         return collection
 
@@ -334,31 +355,41 @@ class A0Orchestrator:
         Executa A2 → A3 → A5 sobre uma página já segmentada por A1.
         Retorna lista de Records com structured_output preenchido.
         """
-        logger.info("A0: processando página '%s' (%d linhas)", page.filename, len(page.lines))
         lines = list(page.lines.values())
-
-        # A2: transcrever cada linha
-        for line in lines:
-            logger.info("  A2: linha %s", line.id)
+        n = len(lines)
+        logger.info("A0: [A2] transcrevendo %d linhas...", n)
+        t_a2 = time.time()
+        for i, line in enumerate(lines, start=1):
+            logger.info("A0: [A2] linha %d/%d — %s", i, n, line.id)
             self._a2.transcribe_line(line)
-            logger.info("  A2: '%s'", line.htr_text)
+            logger.info("A0: [A2] → '%s'", (line.htr_text or "")[:80])
+        logger.info("A0: [A2] concluído em %.1fs", time.time() - t_a2)
 
-        # A3: segmentar linhas em registros
-        logger.info("A0: A3 segmentando...")
+        logger.info("A0: [A3] segmentando registros...")
+        t_a3 = time.time()
         records = self._a3.segment(lines, collection_config, page.filename)
-        logger.info("A0: %d registros identificados", len(records))
+        logger.info("A0: [A3] %d registros em %.1fs", len(records), time.time() - t_a3)
 
-        # A4: corrigir texto por template (opcional — pulado se record_template vazio)
         if collection_config.record_template:
-            logger.info("A0: A4 corrigindo registros com template...")
+            logger.info("A0: [A4] corrigindo %d registros com template...", len(records))
+            t_a4 = time.time()
             for record in records:
                 self._a4.correct(record, collection_config)
+            logger.info("A0: [A4] concluído em %.1fs", time.time() - t_a4)
 
-        # A5: extrair campos de cada registro
+        logger.info("A0: [A5] extraindo campos de %d registros...", len(records))
+        t_a5 = time.time()
         for record in records:
-            logger.info("  A5: registro %d", record.id)
+            logger.info("A0: [A5] registro %d", record.id)
             self._a5.extract(record, collection_config)
-            logger.info("  A5: %s", record.structured_output)
+            logger.info("A0: [A5] → %s", record.structured_output)
+        logger.info("A0: [A5] concluído em %.1fs", time.time() - t_a5)
+
+        logger.info("A0: [A6] validando %d registros...", len(records))
+        t_a6 = time.time()
+        for record in records:
+            self._a6.validate(record, collection_config)
+        logger.info("A0: [A6] concluído em %.1fs", time.time() - t_a6)
 
         return records
 

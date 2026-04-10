@@ -1,4 +1,5 @@
 import base64
+import logging
 from pathlib import Path
 
 from langchain_core.language_models import BaseChatModel
@@ -7,6 +8,8 @@ from langchain_core.messages import HumanMessage
 from src.llm_client import disable_think
 from src.models.line import Line
 from src.prompts import get_prompt
+
+logger = logging.getLogger("recordindex.a2")
 
 
 _MEDIA_TYPES = {
@@ -43,8 +46,11 @@ class A2HTRAgent:
         ])
 
     def transcribe(self, image_path: str) -> str:
+        logger.debug("A2: transcrevendo '%s'", Path(image_path).name)
         result = self._model.invoke([self._build_message(image_path)])
-        return result.content.strip()
+        text = result.content.strip()
+        logger.debug("A2: → '%s'", text[:80] + ("..." if len(text) > 80 else ""))
+        return text
 
     def transcribe_debug(self, image_path: str):
         """Retorna (result_raw, text) para debug (ativado via DEBUG=true no .env)."""
