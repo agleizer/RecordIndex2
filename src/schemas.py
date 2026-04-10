@@ -177,3 +177,4 @@ class PipelineRunRequest(BaseModel):
     record_start_hint: str = ""      # A0 usa padrão se vazio
     record_template: str = ""        # molde com placeholders para A4 — se vazio, A4 é pulado
     image_dir: str = ""              # diretório de imagens — se vazio, usa SAMPLES_DIR do config
+    output_formats: list[str] = ["json"]  # formatos de saída: "json" | "csv" | "txt"

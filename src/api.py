@@ -15,6 +15,7 @@ Endpoints:
 """
 
 import json
+from datetime import datetime
 import logging
 import tempfile
 from pathlib import Path
@@ -44,6 +45,7 @@ from src.schemas import (
     PipelineRunRequest,
 )
 from src import pipeline
+from src.output_writer import make_base_name, write_outputs
 from src.logging_config import setup_logging
 
 config = Config.from_env()
@@ -334,12 +336,15 @@ def pipeline_run(req: PipelineRunRequest = None):
         raise HTTPException(status_code=502, detail=str(e))
 
     output_dir = Path(config.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "output.json"
-    result = collection.to_dict()
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    base_name = make_base_name(collection.name, timestamp)
+    formats = req.output_formats if req else ["json"]
 
+    written = write_outputs(collection, output_dir, formats, base_name)
+    logger.info("Pipeline output: %s", {fmt: str(p) for fmt, p in written.items()})
+
+    result = collection.to_dict()
+    result["output_files"] = {fmt: p.name for fmt, p in written.items()}
     return JSONResponse(content=result)
 
 
@@ -364,9 +369,10 @@ def logs_tail(lines: int = 100):
 
 @app.get("/pipeline/last-output")
 def pipeline_last_output():
-    """Retorna o último output.json gerado pelo pipeline."""
-    output_path = Path(config.output_dir) / "output.json"
-    if not output_path.exists():
+    """Retorna o JSON do output mais recente gerado pelo pipeline."""
+    output_dir = Path(config.output_dir)
+    json_files = sorted(output_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not json_files:
         raise HTTPException(status_code=404, detail="Nenhum output encontrado. Rode /pipeline/run primeiro.")
-    with open(output_path, encoding="utf-8") as f:
+    with open(json_files[0], encoding="utf-8") as f:
         return JSONResponse(content=json.load(f))

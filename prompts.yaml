@@ -63,14 +63,22 @@ a3:
   segment: |
     Você está analisando transcrições de manuscritos históricos em português brasileiro.
     Tipo de coleção: {collection_type} ({collection_name}).
-    Cada registro deste tipo geralmente começa com a expressão '{record_start_hint}'.
+    {template_section}
+    Cada novo registro começa quando o texto introduz um novo ato eclesiástico — tipicamente
+    com uma expressão de data ("Aos X dias", "No primeiro dia", "Em X de mês", ou equivalentes).
+    O exemplo de início para esta coleção é: '{record_start_hint}', mas variações semânticas
+    equivalentes devem ser reconhecidas da mesma forma.
+
+    As transcrições podem conter erros de HTR (palavras deformadas, letras trocadas).
+    Raciocine sobre o conteúdo semântico, não sobre a grafia exata.
 
     Abaixo estão as linhas transcritas, numeradas de 0 a {last_index}:
 
     {numbered_lines}
 
     Identifique quais índices iniciam um novo registro genealógico.
-    Retorne a lista de índices de início (sempre inclua 0) e um breve raciocínio.
+    Linhas anteriores ao primeiro registro (frontispício, cabeçalhos, índices) devem ser ignoradas — retorne lista vazia se a página não contiver nenhum registro.
+    Retorne a lista de índices de início e um breve raciocínio.
 
 a4:
   correct: |

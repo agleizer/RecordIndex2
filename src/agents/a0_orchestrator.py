@@ -339,12 +339,29 @@ class A0Orchestrator:
             "obito":     CollectionConfig.obito,
         }
         cfg = factories[collection_type](name=collection_input.collection_name)
-        # Sobrescrever hints se o usuário forneceu valores explícitos
         if collection_input.record_start_hint:
+            # Hint explícito do usuário tem prioridade máxima
             cfg.record_start_hint = collection_input.record_start_hint
+        elif collection_input.record_template:
+            # Extrair hint das primeiras palavras fixas do template
+            extracted = self._hint_from_template(collection_input.record_template)
+            if extracted:
+                cfg.record_start_hint = extracted
+                logger.info("A0: record_start_hint extraído do template: '%s'", extracted)
         if collection_input.record_template:
             cfg.record_template = collection_input.record_template
         return cfg
+
+    @staticmethod
+    def _hint_from_template(template: str, n_words: int = 12) -> str:
+        """
+        Extrai o padrão de início de registro das primeiras N palavras do template.
+
+        Preserva os placeholders (<CAMPO>) para que o LLM entenda o padrão completo.
+        Ex: "Aos <DATA> de <MES> de <ANO>, eu <PADRE>, batizei..." (12 palavras).
+        """
+        words = template.strip().split()
+        return " ".join(words[:n_words]) if words else ""
 
     # ------------------------------------------------------------------
     # Processamento de página (A2 → A3 → A5)

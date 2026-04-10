@@ -39,7 +39,7 @@ class RecordBoundaries(BaseModel):
     e para justificar academicamente as decisões de segmentação.
     """
 
-    record_start_indices: list[int]
+    record_start_indices: list[int]  # vazio se a página não contiver registros (ex: frontispício)
     reasoning: str
 
 
@@ -54,10 +54,20 @@ class A3RecordSegmentationAgent:
             f"{i}: {line.best_text or '[sem texto]'}"
             for i, line in enumerate(lines)
         )
+        if config.record_template:
+            template_section = (
+                "O molde abaixo representa a estrutura completa de um registro desta coleção. "
+                "Use-o como referência para entender quantos campos e aproximadamente quantas "
+                f"linhas um registro completo deve ter:\n\n{config.record_template}\n"
+            )
+        else:
+            template_section = ""
+
         return self._prompt_template.format(
             collection_type=config.collection_type,
             collection_name=config.collection_name,
             record_start_hint=config.record_start_hint,
+            template_section=template_section,
             last_index=len(lines) - 1,
             numbered_lines=numbered,
         )
@@ -84,8 +94,10 @@ class A3RecordSegmentationAgent:
 
         boundaries: RecordBoundaries = self.detect_boundaries(lines, collection_config)
 
-        # Garante que 0 está sempre incluído e a lista está ordenada e sem duplicatas
-        starts = sorted(set([0] + [i for i in boundaries.record_start_indices if 0 <= i < len(lines)]))
+        # Linhas antes do primeiro índice são descartadas (frontispício, cabeçalhos, etc.)
+        starts = sorted(set(i for i in boundaries.record_start_indices if 0 <= i < len(lines)))
+        if not starts:
+            return []
 
         records = []
         for record_idx, start in enumerate(starts):
