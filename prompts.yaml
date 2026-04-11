@@ -147,5 +147,11 @@ a5:
     Extraia os seguintes campos:
     {field_list}
 
-    Se um campo não estiver presente no texto, use string vazia.
-    Preserve os nomes exatamente como aparecem no texto, sem corrigir ortografia.
+    Regras importantes:
+    - Cada campo tem uma expressão âncora no texto — use-a para localizar o valor correto.
+    - O texto pode conter anotações de margem, nomes de avós, padrinhos e assinatura do
+      vigário. Extraia APENAS a entidade indicada pela descrição do campo, ignorando as demais.
+    - Para o campo data: extraia apenas o dia, mês e ano em formato curto (ex: "4 de Janeiro
+      de 1863"). Não inclua o texto narrativo completo do registro.
+    - Se um campo não estiver presente no texto, use string vazia.
+    - Preserve os nomes exatamente como aparecem no texto, sem corrigir ortografia.

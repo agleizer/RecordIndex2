@@ -45,10 +45,10 @@ class CollectionConfig:
                 "data": str,
             },
             field_descriptions={
-                "nome": "nome da pessoa batizada",
-                "pai": "nome do pai da pessoa batizada",
-                "mae": "nome da mãe da pessoa batizada",
-                "data": "data do batismo (dia, mês e ano)",
+                "nome": "nome da pessoa batizada — aparece após 'dei o nome de' no texto",
+                "pai": "nome do pai da pessoa batizada — aparece após 'filho/a legítimo/a de'",
+                "mae": "nome da mãe da pessoa batizada — aparece após 'e de sua Mulher'",
+                "data": "data do batismo (dia, mês e ano) — aparece no início do registro",
             },
         )
 

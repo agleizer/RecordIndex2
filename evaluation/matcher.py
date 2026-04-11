@@ -22,6 +22,9 @@ MATCH_THRESHOLD = 0.80
 # Pré-filtro: campo primário JW deve ser >= isso para o registro ser candidato.
 # Evita que campos secundários resgatem uma correspondência completamente errada.
 NOME_MIN = 0.65
+# Rescue: se nome falha o pré-filtro mas a média dos campos secundários presentes
+# atinge esse threshold, o par ainda é considerado (pai+mae corretos, nome errado).
+SECONDARY_RESCUE_MIN = 0.85
 
 # Pesos por tipo de coleção: (campo_primário, {campo: peso})
 # O primeiro campo da lista é o "primary" — sujeito ao pré-filtro NOME_MIN.
@@ -52,13 +55,28 @@ def _composite_score(gt: dict, out_so: dict, weights: dict[str, float]) -> float
 
     weights: {campo: peso} — o primeiro campo é o primário (sujeito ao pré-filtro).
     Campos ausentes no output são excluídos do cálculo (não penalizam).
-    Requer campo primário JW >= NOME_MIN — impede que campos secundários
+
+    Pré-filtro: campo primário JW >= NOME_MIN — impede que campos secundários
     sozinhos resgatem uma correspondência completamente errada.
+
+    Rescue: se primário falha mas a média dos campos secundários presentes
+    >= SECONDARY_RESCUE_MIN, o pré-filtro é ignorado e o score composto é calculado
+    normalmente. Cobre o caso onde A5 extraiu a entidade errada no nome mas pai+mae
+    estão corretos.
     """
     primary_field = next(iter(weights))
     primary_jw = jaro_winkler(gt.get(primary_field, ""), out_so.get(primary_field, ""))
     if primary_jw < NOME_MIN:
-        return primary_jw  # abaixo do pré-filtro: retorna só o score do campo primário
+        # Rescue: verifica se campos secundários compensam o nome errado.
+        # Caso típico: A5 extraiu entidade errada no nome mas pai+mae estão corretos.
+        secondary_scores = []
+        for field, _ in list(weights.items())[1:]:
+            gt_val = gt.get(field, "") or ""
+            out_val = out_so.get(field, "") or ""
+            if gt_val and out_val:
+                secondary_scores.append(jaro_winkler(gt_val, out_val))
+        if not secondary_scores or (sum(secondary_scores) / len(secondary_scores)) < SECONDARY_RESCUE_MIN:
+            return primary_jw  # abaixo do pré-filtro e sem rescue: retorna score do campo primário
 
     total_w = 0.0
     total_s = 0.0

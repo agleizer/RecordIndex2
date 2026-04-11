@@ -185,6 +185,22 @@ class A6ValidationAgent:
             field_errors.setdefault("mae", []).append(msg)
             score -= self.SCORE_SUSPICIOUS * 2
 
+        # Cross-field: nome não deve ser subconjunto significativo de pai ou mae
+        # Cobre o caso onde A5 extrai o nome do pai/mãe em vez do batizado.
+        nome = record.structured_output.get("nome", "").strip().lower()
+        if nome and (pai or mae):
+            nome_words = {w for w in nome.split() if len(w) > 3}
+            for other_field, other_val in (("pai", pai), ("mae", mae)):
+                if not other_val or not nome_words:
+                    continue
+                other_words = {w for w in other_val.split() if len(w) > 3}
+                overlap = nome_words & other_words
+                if overlap and len(overlap) / len(nome_words) >= 0.5:
+                    msg = f"nome coincide com {other_field} — possível confusão de entidade pelo A5"
+                    field_errors.setdefault("nome", []).append(msg)
+                    score -= self.SCORE_SUSPICIOUS
+                    break
+
         return max(0.0, round(score, 2)), field_errors
 
     # ------------------------------------------------------------------
