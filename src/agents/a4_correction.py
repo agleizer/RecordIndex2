@@ -73,11 +73,10 @@ class A4CorrectionAgent:
         if not collection_config.record_template:
             return ""
 
-        raw_text = " ".join(
-            line.htr_text for line in record.lines.values() if line.htr_text
-        )
+        # get_concatenated_text() sabe sobre page_text (modo page) e line concat (modo line)
+        raw_text = record.get_concatenated_text()
         if not raw_text.strip():
-            logger.warning("A4: registro %d sem texto HTR — correção pulada", record.id)
+            logger.warning("A4: registro %d sem texto — correção pulada", record.id)
             return ""
 
         prompt = self._prompt_template.format(

@@ -1,6 +1,7 @@
 import base64
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
@@ -8,6 +9,9 @@ from langchain_core.messages import HumanMessage
 from src.llm_client import disable_think
 from src.models.line import Line
 from src.prompts import get_prompt
+
+if TYPE_CHECKING:
+    from src.models.page import Page
 
 logger = logging.getLogger("recordindex.a2")
 
@@ -34,6 +38,7 @@ class A2HTRAgent:
     def __init__(self, model: BaseChatModel):
         self._model = disable_think(model)
         self._prompt = get_prompt("a2", "transcribe").strip()
+        self._page_prompt_template = get_prompt("a2", "transcribe_page").strip()
 
     def _build_message(self, image_path: str) -> HumanMessage:
         suffix = Path(image_path).suffix.lower()
@@ -60,6 +65,39 @@ class A2HTRAgent:
     def transcribe_line(self, line: Line) -> Line:
         line.htr_text = self.transcribe(line.image_path)
         return line
+
+    # ------------------------------------------------------------------
+    # Modo PAGE — uma chamada por página (htr_scope="page")
+    # ------------------------------------------------------------------
+
+    def transcribe_page(self, page: "Page") -> list[str]:
+        """
+        Transcreve uma página inteira com uma única chamada ao VLM.
+
+        Claude decide quantas linhas há na imagem autonomamente — sem depender
+        do count do A1, que é menos preciso que a detecção visual do modelo.
+
+        Retorna a lista de strings transcritas (uma por linha identificada).
+        Lista vazia se a página não contiver texto legível.
+
+        Modo PAGE — alternativa mais barata e contextualmente mais rica a
+        chamadas individuais transcribe_line(). NÃO altera transcribe_line().
+        """
+        suffix = Path(page.image_path).suffix.lower()
+        media_type = _MEDIA_TYPES.get(suffix, "jpeg")
+        with open(page.image_path, "rb") as f:
+            image_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+        message = HumanMessage(content=[
+            {"type": "image_url", "image_url": {"url": f"data:image/{media_type};base64,{image_b64}"}},
+            {"type": "text", "text": self._page_prompt_template},
+        ])
+
+        logger.info("A2 [page]: transcrevendo página '%s'", page.filename)
+        result = self._model.invoke([message])
+        output_lines = [l.strip() for l in result.content.strip().splitlines() if l.strip()]
+        logger.info("A2 [page]: '%s' concluído — %d linhas transcritas", page.filename, len(output_lines))
+        return output_lines
 
     def __call__(self, state: dict) -> dict:
         """

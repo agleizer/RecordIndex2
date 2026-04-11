@@ -32,3 +32,4 @@ class CollectionInput:
     collection_type: str = ""        # hint opcional — A0 infere se vazio
     record_start_hint: str = ""      # hint opcional — A0 usa padrão se vazio
     record_template: str = ""        # molde com placeholders para A4 — se vazio, A4 é pulado
+    htr_scope: str = "line"          # "line": A2 transcreve linha a linha | "page": A2 transcreve página inteira

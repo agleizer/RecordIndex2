@@ -51,9 +51,10 @@ Imagem de página
 | A0 Orquestrador (Python puro) | ✅ Implementado — LangGraph Trabalho Futuro | 2 |
 | A3 Segmentação de registros | ✅ Implementado | 2 |
 | A5 NER/Extração | ✅ Implementado | 2 |
-| A1 Segmentação de linhas | ✅ Implementado e testado | 3 |
+| A1 Segmentação de linhas | ✅ Implementado e testado (IQR filtering) | 3 |
 | A4 Correção estrutural | ✅ Implementado (template opcional) | 3 |
 | A6 Validação | ✅ Implementado | 3 |
+| A0 Multi-page open_record | ✅ Implementado | 5 |
 
 ---
 
@@ -184,19 +185,24 @@ Collection
               ├── htr_text: str            (A2)
               ├── corrected_text: str      (vazio — A4 opera no nível do Record, não da Line)
               ├── page_filename: str       (proveniência — setado por Page.add_line())
-              └── bbox: tuple              (A1)
+              ├── bbox: tuple              (A1)
+              └── is_valid: bool           (A1 — False se outlier IQR; A2 pula linhas inválidas)
   └── records: dict[record.id → Record]
         ├── id: int
-        ├── page_filename: str
-        ├── lines: dict[line.id → Line]   ← mesmos objetos de Page.lines
+        ├── page_filename: str             (página onde o registro começa)
+        ├── last_page_filename: str        (página onde termina — diferente se multi-página)
+        ├── lines: dict[line.id → Line]   ← mesmos objetos de Page.lines (pode span múltiplas páginas)
+        ├── page_text: str                (modo page — texto completo sem granularidade de linha)
         ├── corrected_text: str           (A4 — texto corrigido pelo template; vazio se A4 não rodou)
         ├── structured_output: dict       (A5) {nome, pai, mãe, data, ...}
         └── validation: dict              (A6) {score, verdict, field_errors, notes}
 ```
 
-**Dual-referência:** os mesmos objetos `Line` aparecem tanto em `Page.lines` quanto em `Record.lines`. Isso espelha o padrão AVLTree do v1.0 — navegação possível em ambas as direções sem duplicação de dados.
+**Dual-referência:** os mesmos objetos `Line` aparecem tanto em `Page.lines` quanto em `Record.lines`. Isso espelha o padrão AVLTree do v1.0 — navegação possível em ambas as direções sem duplicação de dados. Em registros multi-página, `Record.lines` contém linhas de múltiplas páginas.
 
 `Record.get_concatenated_text()` retorna `corrected_text` (A4) se disponível, senão concatena `line.best_text` (que por sua vez prefere `line.corrected_text` sobre `line.htr_text`).
+
+**Registros multi-página:** o A0 mantém um `open_record` entre páginas. Linhas que aparecem antes do primeiro início de registro em uma página são adicionadas ao registro aberto da página anterior. Um registro só é finalizado (A4/A5/A6) quando um novo início é confirmado na página seguinte ou quando a coleção termina.
 
 ---
 
@@ -281,17 +287,20 @@ Resposta esperada:
 
 ---
 
-### POST /a2/transcribe — transcrever uma linha manuscrita (testa A2)
+### POST /a2/transcribe — transcrever uma imagem (testa A2)
 
-Transcreve uma imagem de linha individual (crop de uma linha do manuscrito).
+Transcreve uma imagem de linha individual (crop de uma linha do manuscrito) ou uma página completa.
 
 **Configuração no Postman:**
 - Method: `POST`
 - URL: `http://localhost:8000/a2/transcribe`
 - Body: `form-data`
 - Campo: `file` | Tipo: `File` | Valor: selecionar a imagem
+- Campo: `htr_scope` | Tipo: `Text` | Valor: `line` (padrão) ou `page`
 
 Formatos aceitos: `.jpg`, `.jpeg`, `.png`, `.tif`, `.tiff`
+
+Com `htr_scope=page`, A2 transcreve todas as linhas visíveis da página e retorna uma lista de strings (uma por linha). Com `htr_scope=line` (padrão), retorna o texto da linha como string.
 
 Coloque a imagem de linha em `volumes/samples/` ou faça upload direto pelo Postman.
 
@@ -309,14 +318,14 @@ Coloque a imagem de linha em `volumes/samples/` ou faça upload direto pelo Post
 
 ### POST /a3/segment — segmentar linhas em registros (testa A3)
 
-Recebe uma lista de textos transcritos e retorna quais índices iniciam novos registros.
+Recebe uma lista de textos transcritos (modo line) ou o texto completo de uma página (modo page) e retorna os registros identificados.
 
 **Configuração no Postman:**
 - Method: `POST`
 - URL: `http://localhost:8000/a3/segment`
 - Body: `raw` → `JSON`
 
-**Body de exemplo (batismo):**
+**Body de exemplo — modo line (batismo):**
 ```json
 {
   "lines": [
@@ -328,16 +337,35 @@ Recebe uma lista de textos transcritos e retorna quais índices iniciam novos re
     "Nada mais constava. O vigário: Padre Manuel.",
     "Aos vinte dias do mês de abril de mil oitocentos e cincoenta,"
   ],
-  "collection_type": "batismo"
+  "collection_type": "batismo",
+  "htr_scope": "line"
 }
 ```
 
-**Resposta esperada:**
+**Resposta esperada (modo line):**
 ```json
 {
   "record_start_indices": [0, 3, 6],
   "reasoning": "Cada registro começa com 'Aos X dias do mês...'",
   "num_records": 3
+}
+```
+
+**Body de exemplo — modo page:**
+```json
+{
+  "page_text": "Aos quatro dias do mês de abril...\nbaptizei a Maria...\nAos doze dias...",
+  "collection_type": "batismo",
+  "htr_scope": "page"
+}
+```
+
+**Resposta esperada (modo page):**
+```json
+{
+  "record_texts": ["Aos quatro dias...baptizei a Maria...", "Aos doze dias..."],
+  "reasoning": "Dois registros identificados pela expressão de data",
+  "num_records": 2
 }
 ```
 
@@ -450,7 +478,8 @@ Processa todas as imagens de **página** no diretório especificado. A1 segmenta
   "image_dir": "/data/input",
   "record_template": "",
   "record_start_hint": "",
-  "output_formats": ["json", "csv"]
+  "output_formats": ["json", "csv"],
+  "htr_scope": "line"
 }
 ```
 
@@ -460,6 +489,7 @@ Todos os campos são opcionais:
 - `record_template`: molde com placeholders `<CAMPO>` para ativar A4 (se vazio, A4 é pulado). As primeiras 12 palavras do template também são usadas como `record_start_hint` automaticamente
 - `record_start_hint`: expressão de início de registro — se vazio e `record_template` preenchido, extraído automaticamente do template
 - `output_formats`: lista de formatos de saída — `"json"` | `"csv"` | `"txt"` (padrão: `["json"]`)
+- `htr_scope`: `"line"` (padrão) | `"page"` — modo de transcrição. Em `"line"` A2 processa cada linha individualmente e A3 recebe lista de textos. Em `"page"` A2 transcreve a página inteira e A3 recebe o texto completo.
 - `year` e `location`: metadados que auxiliam A0 na classificação
 
 **Resposta:** JSON completo da Collection com todos os Records, campos extraídos e resultado de validação (score A6). Os arquivos de saída são salvos em `volumes/output/` com nome `{colecao}_{YYYY-MM-DD_HH-MM}.{ext}`.
@@ -618,13 +648,13 @@ Documentação interativa (Swagger): `http://localhost:8000/docs`
 | Método | Endpoint | Body | Descrição |
 |--------|----------|------|-----------|
 | GET | `/health` | — | Liveness check — retorna modelos configurados por agente (A0–A6) |
-| POST | `/a1/segment` | `form-data: file` | Segmenta uma imagem de página em linhas (testa A1 isolado) |
-| POST | `/a2/transcribe` | `form-data: file` | Transcreve uma imagem de linha (testa A2 isolado) |
-| POST | `/a3/segment` | `{"lines": [...], "collection_type": "batismo"}` | Segmenta textos em registros (testa A3 isolado) |
+| POST | `/a1/segment` | `form-data: file` | Segmenta uma imagem de página em linhas (testa A1 isolado; aplica filtro IQR) |
+| POST | `/a2/transcribe` | `form-data: file, htr_scope=line\|page` | Transcreve uma imagem de linha ou página (testa A2 isolado) |
+| POST | `/a3/segment` | `{"lines": [...], "collection_type": "batismo", "htr_scope": "line"}` | Segmenta textos em registros (testa A3 isolado; aceita `page_text` em modo page) |
 | POST | `/a4/correct` | `{"record_text": "...", "record_template": "Aos <DIA>..."}` | Corrige texto HTR usando template (testa A4 isolado) |
 | POST | `/a5/extract` | `{"record_text": "...", "collection_type": "batismo"}` | Extrai campos de um registro (testa A5 isolado) |
 | POST | `/a6/validate` | `{"record_text": "...", "structured_output": {...}, "collection_type": "batismo"}` | Valida campos extraídos (score 0–1, verdict, field_errors) |
-| POST | `/pipeline/run` | `{"collection_name": "...", "collection_type": "batismo", "image_dir": "/data/input", "output_formats": ["json"], ...}` | Roda pipeline completo (A1→A2→A3→A4→A5→A6), com fallback automático para registros com score < threshold |
+| POST | `/pipeline/run` | `{"collection_name": "...", "collection_type": "batismo", "image_dir": "/data/input", "output_formats": ["json"], "htr_scope": "line", ...}` | Roda pipeline completo (A1→A2→A3→A4→A5→A6), com suporte multi-página e fallback automático para registros com score < threshold |
 | GET | `/pipeline/last-output` | — | Retorna o último `output.json` gerado |
 | GET | `/logs/tail` | `?lines=100` | Retorna as últimas N linhas do log persistido |
 

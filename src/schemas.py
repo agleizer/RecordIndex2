@@ -12,7 +12,9 @@ Benefício imediato: Swagger/OpenAPI gera documentação precisa dos endpoints
 em vez de mostrar "object" genérico.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+_VALID_HTR_SCOPES = {"line", "page"}
 
 
 class AgentConfig(BaseModel):
@@ -27,33 +29,74 @@ class HealthResponse(BaseModel):
 
 
 class TranscribeResponse(BaseModel):
+    """
+    Response de /a2/transcribe.
+
+    Modo line (htr_scope="line", padrão):
+      htr_text: texto transcrito da imagem de linha enviada.
+
+    Modo page (htr_scope="page"):
+      lines: lista de textos transcritos — um item por linha que Claude identificou.
+      n_returned: número de linhas que Claude transcreveu.
+      Claude determina o count de linhas autonomamente (sem depender do A1).
+    """
+
     filename: str
-    htr_text: str
+    htr_scope: str = "line"
+    # line mode
+    htr_text: str | None = None
     debug_raw: str | None = None
+    # page mode
+    lines: list[str] | None = None
+    n_returned: int | None = None
 
 
 class SegmentRequest(BaseModel):
     """
-    Request para /a3/segment: lista de textos de linhas + tipo de coleção.
+    Request para /a3/segment.
 
-    lines: textos transcritos (htr_text ou corrected_text), em ordem espacial.
-    collection_type: "batismo" | "casamento" | "obito"
+    Modo line (htr_scope="line", padrão):
+      lines: textos transcritos (htr_text ou corrected_text), em ordem espacial.
+
+    Modo page (htr_scope="page"):
+      page_text: texto completo da página como bloco único.
+
+    collection_type: "batismo" | "casamento" | "obito" (ambos os modos)
     """
 
-    lines: list[str]
+    htr_scope: str = "line"
+    lines: list[str] = []          # modo line
+    page_text: str = ""            # modo page
     collection_type: str = "batismo"
+
+    @field_validator("htr_scope")
+    @classmethod
+    def _validate_htr_scope(cls, v: str) -> str:
+        if v not in _VALID_HTR_SCOPES:
+            raise ValueError(f"htr_scope inválido: '{v}'. Use: line | page")
+        return v
 
 
 class SegmentResponse(BaseModel):
     """
-    Response de /a3/segment: índices de início de cada registro.
+    Response de /a3/segment.
 
-    record_start_indices: lista de índices 0-based que iniciam cada registro.
-    reasoning: raciocínio do modelo (para debug e transparência acadêmica).
-    num_records: número de registros identificados.
+    Modo line (htr_scope="line"):
+      record_start_indices: índices 0-based que iniciam cada registro.
+
+    Modo page (htr_scope="page"):
+      record_texts: texto completo de cada registro identificado.
+
+    reasoning e num_records presentes em ambos os modos.
+    Campos do modo oposto são omitidos da resposta (None + exclude_none).
     """
 
-    record_start_indices: list[int]
+    htr_scope: str = "line"
+    # line mode (None em modo page)
+    record_start_indices: list[int] | None = None
+    # page mode (None em modo line)
+    record_texts: list[str] | None = None
+    # ambos
     reasoning: str
     num_records: int
 
@@ -178,3 +221,11 @@ class PipelineRunRequest(BaseModel):
     record_template: str = ""        # molde com placeholders para A4 — se vazio, A4 é pulado
     image_dir: str = ""              # diretório de imagens — se vazio, usa SAMPLES_DIR do config
     output_formats: list[str] = ["json"]  # formatos de saída: "json" | "csv" | "txt"
+    htr_scope: str = "line"          # "line": A2 por linha (padrão) | "page": A2 por página inteira
+
+    @field_validator("htr_scope")
+    @classmethod
+    def _validate_htr_scope(cls, v: str) -> str:
+        if v not in _VALID_HTR_SCOPES:
+            raise ValueError(f"htr_scope inválido: '{v}'. Use: line | page")
+        return v

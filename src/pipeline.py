@@ -65,12 +65,14 @@ def run_with_orchestrator(image_dir: str, config: Config, collection_config: Col
         line = Line(id=img_path.stem, image_path=str(img_path))
         page.add_line(line)
 
-    # Usar A0 internamente mas injetar CollectionConfig já pronta
+    # Usar A0 internamente mas injetar CollectionConfig já pronta (pula classificação)
     a0 = A0Orchestrator(config)
+    a0._record_counter = 0
     collection = Collection(name=collection_config.collection_name)
     collection.add_page(page)
-    records = a0._process_page(page, collection_config)
+    _pre, records = a0._transcribe_and_segment(page, collection_config, htr_scope="line")
     for record in records:
+        a0._finalize_record(record, collection_config)
         collection.add_record(record)
     return collection
 

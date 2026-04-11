@@ -86,7 +86,7 @@ def _write_csv(collection: Collection, output_dir: Path, base_name: str) -> Path
                 output_fields.append(key)
                 seen.add(key)
 
-    fixed_cols = ["record_id", "page", "num_lines", "text", "validation_score", "validation_verdict"]
+    fixed_cols = ["record_id", "page", "num_lines", "htr_scope", "text", "validation_score", "validation_verdict"]
     fieldnames = fixed_cols + output_fields
 
     path = output_dir / f"{base_name}.csv"
@@ -98,7 +98,8 @@ def _write_csv(collection: Collection, output_dir: Path, base_name: str) -> Path
             row = {
                 "record_id":          rec.id,
                 "page":               rec.page_filename,
-                "num_lines":          len(rec.lines),
+                "num_lines":          len(rec.lines) if rec.lines else None,
+                "htr_scope":          "page" if rec.page_text and not rec.lines else "line",
                 "text":               rec.get_concatenated_text(),
                 "validation_score":   val.score if val else "",
                 "validation_verdict": val.verdict if val else "",

@@ -41,6 +41,14 @@ class Config:
     output_dir: str
     samples_dir: str
 
+    # Filtros de qualidade A3
+    # a3_min_htr_chars: descarta linhas com transcrição A2 mais curta que N chars antes do A3.
+    #   Evita que ruídos ("A", "†", "") confundam a detecção de limites de registro.
+    a3_min_htr_chars: int
+    # a3_outlier_multiplier: registros com mais que avg_linhas * k linhas são re-segmentados.
+    #   k=0 desabilita. Padrão 2.0 — apenas merges graves são tratados.
+    a3_outlier_multiplier: float
+
     # Debug
     debug: bool
 
@@ -68,5 +76,7 @@ class Config:
             input_dir=os.getenv("INPUT_DIR", "/data/input"),
             output_dir=os.getenv("OUTPUT_DIR", "/data/output"),
             samples_dir=os.getenv("SAMPLES_DIR", "/data/samples"),
+            a3_min_htr_chars=int(os.getenv("A3_MIN_HTR_CHARS", "8")),
+            a3_outlier_multiplier=float(os.getenv("A3_OUTLIER_MULTIPLIER", "2.0")),
             debug=os.getenv("DEBUG", "false").lower() == "true",
         )

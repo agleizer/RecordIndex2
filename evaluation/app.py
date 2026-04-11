@@ -85,7 +85,7 @@ async def evaluate(
     )
 
     # --- Alinhamento ---
-    alignments, unmatched_outputs = align(gt_records, output_records)
+    alignments, unmatched_outputs = align(gt_records, output_records, collection_type)
 
     n_matched = sum(1 for a in alignments if a["matched"])
 

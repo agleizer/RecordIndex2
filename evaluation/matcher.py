@@ -1,23 +1,36 @@
 """
 Alinhamento entre registros do pipeline e registros de referência.
 
-Estratégia: best-match por campo `nome` usando Jaro-Winkler.
-Para cada registro GT, percorre todos os outputs e alinha com o que
-maximizar a similaridade no nome — sem exigir correspondência posicional.
+Estratégia: best-match por score composto (Jaro-Winkler nos campos-chave),
+dependente do tipo de coleção:
+  batismo/obito  → nome (0.40) + pai (0.35) + mae (0.25)
+  casamento      → noivo (0.45) + noiva (0.35) + pai_noivo (0.20)
 
-Threshold padrão: 0.82
+O campo primário (primeiro peso) funciona como pré-filtro: JW < NOME_MIN
+descarta o par sem calcular os demais campos, evitando que campos secundários
+resgatem correspondências com nomes completamente diferentes.
+
+Threshold final: 0.80 (score composto)
   - Nomes próprios históricos têm variação ortográfica (Joanna/Joana, Emília/Emilia)
-  - JW é tolerante a sufixos, boa escolha para nomes
-  - 0.82 é mais permissivo que 0.85 para capturar casos com ruído HTR
+  - JW é tolerante a prefixos, boa escolha para nomes próprios
 """
 
 import unicodedata
 from rapidfuzz.distance import JaroWinkler
 
 MATCH_THRESHOLD = 0.80
-# Pré-filtro: nome JW deve ser >= isso para o registro ser candidato.
-# Evita que pai+mae de um registro completamente diferente resgate uma correspondência errada.
+# Pré-filtro: campo primário JW deve ser >= isso para o registro ser candidato.
+# Evita que campos secundários resgatem uma correspondência completamente errada.
 NOME_MIN = 0.65
+
+# Pesos por tipo de coleção: (campo_primário, {campo: peso})
+# O primeiro campo da lista é o "primary" — sujeito ao pré-filtro NOME_MIN.
+_MATCH_WEIGHTS: dict[str, dict[str, float]] = {
+    "batismo":   {"nome": 0.40, "pai": 0.35, "mae": 0.25},
+    "casamento": {"noivo": 0.45, "noiva": 0.35, "pai_noivo": 0.20},
+    "obito":     {"nome": 0.40, "pai": 0.35, "mae": 0.25},
+}
+_DEFAULT_WEIGHTS = _MATCH_WEIGHTS["batismo"]
 
 
 def _normalize(s: str) -> str:
@@ -33,21 +46,20 @@ def jaro_winkler(a: str, b: str) -> float:
     return JaroWinkler.similarity(_normalize(a), _normalize(b))
 
 
-def _composite_score(gt: dict, out_so: dict) -> float:
+def _composite_score(gt: dict, out_so: dict, weights: dict[str, float]) -> float:
     """
-    Score composto nome+pai+mae para resolver ambiguidade de nomes comuns
-    (ex: múltiplos Manuéis ou Marias na mesma coleção).
+    Score composto para resolver ambiguidade de nomes comuns.
 
-    Pesos: nome=0.40, pai=0.35, mae=0.25
+    weights: {campo: peso} — o primeiro campo é o primário (sujeito ao pré-filtro).
     Campos ausentes no output são excluídos do cálculo (não penalizam).
-    Requer nome JW >= NOME_MIN como pré-condição — impede que pai+mae
-    sozinhos resgatem uma correspondência completamente errada de nome.
+    Requer campo primário JW >= NOME_MIN — impede que campos secundários
+    sozinhos resgatem uma correspondência completamente errada.
     """
-    nome_jw = jaro_winkler(gt.get("nome", ""), out_so.get("nome", ""))
-    if nome_jw < NOME_MIN:
-        return nome_jw  # abaixo do pré-filtro: retorna só o score do nome
+    primary_field = next(iter(weights))
+    primary_jw = jaro_winkler(gt.get(primary_field, ""), out_so.get(primary_field, ""))
+    if primary_jw < NOME_MIN:
+        return primary_jw  # abaixo do pré-filtro: retorna só o score do campo primário
 
-    weights = {"nome": 0.40, "pai": 0.35, "mae": 0.25}
     total_w = 0.0
     total_s = 0.0
 
@@ -63,18 +75,25 @@ def _composite_score(gt: dict, out_so: dict) -> float:
     return total_s / total_w
 
 
-def align(gt_records: list[dict], output_records: list[dict]) -> tuple[list[dict], list[dict]]:
+def align(
+    gt_records: list[dict],
+    output_records: list[dict],
+    collection_type: str = "batismo",
+) -> tuple[list[dict], list[dict]]:
     """
     Para cada registro GT, encontra o melhor output usando score composto
-    nome+pai+mae (Jaro-Winkler). Cada output é usado no máximo uma vez (greedy).
+    (Jaro-Winkler nos campos-chave do tipo de coleção). Cada output é usado
+    no máximo uma vez (greedy).
 
-    Score composto resolve ambiguidade de nomes comuns (Manuéis, Marias, etc.):
-    mesmo que o nome seja idêntico, pais diferentes diferenciam os registros.
+    collection_type controla quais campos e pesos são usados:
+      batismo/obito : nome+pai+mae
+      casamento     : noivo+noiva+pai_noivo
 
     Retorna:
       alignments: lista de dicts com chaves gt, output, match_score, matched
       unmatched_outputs: outputs sem correspondência GT
     """
+    weights = _MATCH_WEIGHTS.get(collection_type, _DEFAULT_WEIGHTS)
     used = set()
     alignments = []
 
@@ -86,7 +105,7 @@ def align(gt_records: list[dict], output_records: list[dict]) -> tuple[list[dict
             if i in used:
                 continue
             out_so = out.get("structured_output") or {}
-            score = _composite_score(gt, out_so)
+            score = _composite_score(gt, out_so, weights)
             if score > best_score:
                 best_score = score
                 best_idx = i

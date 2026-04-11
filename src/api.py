@@ -20,7 +20,7 @@ import logging
 import tempfile
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 
 from src.config import Config
@@ -130,71 +130,123 @@ async def a1_segment(file: UploadFile = File(...)) -> SegmentPageResponse:
 
 
 @app.post("/a2/transcribe", response_model=TranscribeResponse, response_model_exclude_none=True)
-async def a2_transcribe(file: UploadFile = File(...)) -> TranscribeResponse:
+async def a2_transcribe(
+    file: UploadFile = File(...),
+    htr_scope: str = Form("line"),
+) -> TranscribeResponse:
     """
-    Transcreve uma imagem de linha manuscrita via A2.
+    Transcreve uma imagem via A2.
 
-    Body: multipart/form-data com campo 'file' contendo a imagem.
-    Retorna: { "filename": "...", "htr_text": "..." }
+    Modo line (htr_scope="line", padrão):
+      Trata a imagem como uma única linha de manuscrito.
+      Body: multipart/form-data com campo 'file'.
+      Retorna: { "htr_text": "texto transcrito" }
+
+    Modo page (htr_scope="page"):
+      Trata a imagem como página inteira. Claude detecta e transcreve
+      todas as linhas visíveis — sem depender do count do A1.
+      Body: multipart/form-data com campo 'file'.
+      Retorna: { "lines": ["linha 0", ...], "n_returned": N }
     """
     suffix = Path(file.filename).suffix if file.filename else ".png"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(await file.read())
         tmp_path = tmp.name
 
-    logger.info("A2 transcribe: file=%s provider=%s model=%s", file.filename, config.a2_provider, config.a2_model)
+    logger.info(
+        "A2 transcribe: file=%s scope=%s provider=%s model=%s",
+        file.filename, htr_scope, config.a2_provider, config.a2_model,
+    )
     try:
         model = get_chat_model(config.a2_provider, config.a2_model, config.ollama_base_url)
         agent = A2HTRAgent(model)
-        logger.info("A2 invoking model...")
-        if config.debug:
-            raw, text = agent.transcribe_debug(tmp_path)
-            logger.info("A2 raw result: %r", raw)
+
+        if htr_scope == "page":
+            from src.models.page import Page as PageModel
+            page_obj = PageModel(filename=Path(tmp_path).stem, image_path=tmp_path)
+            transcribed = agent.transcribe_page(page_obj)  # valid_lines=None → retorna lista
+            return TranscribeResponse(
+                filename=file.filename or "",
+                htr_scope="page",
+                lines=transcribed,
+                n_returned=len(transcribed),
+            )
         else:
-            raw, text = None, agent.transcribe(tmp_path)
-        logger.info("A2 text: %r", text)
+            if config.debug:
+                raw, text = agent.transcribe_debug(tmp_path)
+                logger.info("A2 raw result: %r", raw)
+            else:
+                raw, text = None, agent.transcribe(tmp_path)
+            logger.info("A2 text: %r", text)
+            return TranscribeResponse(
+                filename=file.filename or "",
+                htr_scope="line",
+                htr_text=text,
+                debug_raw=raw if config.debug else None,
+            )
     except Exception as e:
         logger.exception("A2 error")
         raise HTTPException(status_code=502, detail=str(e))
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
-    return TranscribeResponse(
-        filename=file.filename,
-        htr_text=text,
-        debug_raw=raw if config.debug else None,
-    )
 
-
-@app.post("/a3/segment", response_model=SegmentResponse)
+@app.post("/a3/segment", response_model=SegmentResponse, response_model_exclude_none=True)
 def a3_segment(req: SegmentRequest) -> SegmentResponse:
     """
-    Segmenta uma lista de textos de linhas em registros genealógicos.
+    Segmenta texto em registros genealógicos via A3.
 
-    Body JSON: { "lines": ["linha 0", "linha 1", ...], "collection_type": "batismo" }
-    Retorna: índices de início de cada registro + raciocínio do modelo.
+    Modo line (htr_scope="line", padrão):
+      Body JSON: { "lines": ["linha 0", "linha 1", ...], "collection_type": "batismo" }
+      Retorna: record_start_indices (índices 0-based que iniciam cada registro) + reasoning.
+
+    Modo page (htr_scope="page"):
+      Body JSON: { "htr_scope": "page", "page_text": "texto...", "collection_type": "batismo" }
+      Retorna: record_texts (texto completo de cada registro) + reasoning.
     """
-    logger.info("A3 segment: %d linhas, collection_type=%s", len(req.lines), req.collection_type)
     try:
         col_config = _get_collection_config(req.collection_type)
         model = get_chat_model(config.a3_provider, config.a3_model, config.ollama_base_url)
         agent = A3RecordSegmentationAgent(model)
 
-        lines = [Line(id=str(i), image_path="", htr_text=text) for i, text in enumerate(req.lines)]
-        boundaries = agent.detect_boundaries(lines, col_config)
-
-        # Contar registros: número de índices válidos após normalização
-        starts = sorted(set([0] + [i for i in boundaries.record_start_indices if 0 <= i < len(lines)]))
-        logger.info("A3: %d registros, starts=%s, reasoning=%s", len(starts), starts, boundaries.reasoning)
+        if req.htr_scope == "page":
+            if not req.page_text.strip():
+                raise HTTPException(status_code=400, detail="page_text não pode ser vazio para htr_scope='page'")
+            logger.info("A3 segment [page]: %d chars, collection_type=%s", len(req.page_text), req.collection_type)
+            blocks = agent.detect_page_blocks(req.page_text, col_config)
+            record_texts = [t for t in blocks.record_texts if t.strip()]
+            logger.info("A3: %d registros (modo page), reasoning=%s", len(record_texts), blocks.reasoning)
+            return SegmentResponse(
+                htr_scope="page",
+                record_texts=record_texts,
+                reasoning=blocks.reasoning,
+                num_records=len(record_texts),
+            )
+        else:
+            if not req.lines:
+                return SegmentResponse(
+                    htr_scope="line",
+                    record_start_indices=[],
+                    reasoning="Lista de linhas vazia.",
+                    num_records=0,
+                )
+            logger.info("A3 segment [line]: %d linhas, collection_type=%s", len(req.lines), req.collection_type)
+            lines = [Line(id=str(i), image_path="", htr_text=text) for i, text in enumerate(req.lines)]
+            boundaries = agent.detect_boundaries(lines, col_config)
+            starts = sorted(set(i for i in boundaries.record_start_indices if 0 <= i < len(lines)))
+            logger.info("A3: %d registros, starts=%s, reasoning=%s", len(starts), starts, boundaries.reasoning)
+            return SegmentResponse(
+                htr_scope="line",
+                record_start_indices=boundaries.record_start_indices,
+                reasoning=boundaries.reasoning,
+                num_records=len(starts),
+                record_texts=None,
+            )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("A3 error")
         raise HTTPException(status_code=502, detail=str(e))
-
-    return SegmentResponse(
-        record_start_indices=boundaries.record_start_indices,
-        reasoning=boundaries.reasoning,
-        num_records=len(starts),
-    )
 
 
 @app.post("/a5/extract", response_model=ExtractResponse)
@@ -322,6 +374,7 @@ def pipeline_run(req: PipelineRunRequest = None):
         collection_type=req.collection_type if req else "",
         record_start_hint=req.record_start_hint if req else "",
         record_template=req.record_template if req else "",
+        htr_scope=req.htr_scope if req else "line",
     )
 
     logger.info("Pipeline run: dir=%s, collection_name=%s, type_hint=%s",

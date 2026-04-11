@@ -65,16 +65,14 @@ def make_structured(model: BaseChatModel, schema: type):
     """
     Retorna uma chain Runnable com thinking mode desabilitado e structured output.
 
-    Usa method="function_calling" (tool calling API) para Ollama — mais robusto que
-    method="json_schema" porque não depende do campo `format` do Ollama.
-
-    Contexto: Ollama 0.19.0-rc0 tem um bug onde format=dict (JSON schema) é ignorado
-    para modelos Qwen3.5, retornando texto puro. function_calling e json_mode funcionam.
-    function_calling é preferido por não exigir instruções de formato no prompt.
+    Usa method="json_schema" para todos os providers — passa o schema Pydantic completo
+    ao modelo, que constrainge os nomes dos campos no output estruturado.
 
     O parâmetro reasoning/think é setado via model_copy() na instância antes de
     construir a chain — .bind() seria descartado por with_structured_output.
 
+    Para Ollama: desabilita thinking mode antes de construir a chain (Qwen3.5/llama3.2
+    com thinking ativo produz raciocínio que quebra o parser do structured output).
     Para providers não-Ollama (Anthropic, OpenAI): usa with_structured_output normalmente.
     """
     try:

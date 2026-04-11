@@ -59,7 +59,41 @@ a2:
     Se não conseguir ler alguma palavra, use [?] no lugar.
     Retorne APENAS o texto transcrito, sem explicações.
 
+  transcribe_page: |
+    Você é um especialista em transcrição de manuscritos históricos em português brasileiro.
+
+    Transcreva todas as linhas de texto visíveis nesta página de manuscrito, de cima para baixo.
+
+    Regras:
+    - Retorne uma linha de texto por linha da sua resposta.
+    - Preserve a ortografia original, mesmo que arcaica.
+    - Se uma linha for ilegível, retorne [?] para aquela linha.
+    - NÃO adicione numeração, marcadores, explicações ou linhas em branco extras.
+    - Inclua apenas linhas com texto manuscrito — ignore ornamentos, selos ou margens em branco.
+
 a3:
+  segment_page: |
+    Você está analisando a transcrição de uma página de manuscrito histórico em português brasileiro.
+    Tipo de coleção: {collection_type} ({collection_name}).
+    {template_section}
+    Cada novo registro começa quando o texto introduz um novo ato eclesiástico — tipicamente
+    com uma expressão de data ("Aos X dias", "No primeiro dia", "Em X de mês", ou equivalentes).
+    O exemplo de início para esta coleção é: '{record_start_hint}', mas variações semânticas
+    equivalentes devem ser reconhecidas.
+    {avg_lines_hint_section}
+    As transcrições podem conter erros de HTR (palavras deformadas, letras trocadas).
+    Raciocine sobre o conteúdo semântico, não sobre a grafia exata.
+
+    Abaixo está o texto completo da página (transcrição contínua):
+
+    {page_text}
+
+    Divida o texto acima nos registros genealógicos individuais que ele contém.
+    Retorne o texto de cada registro integralmente, preservando a transcrição original.
+    Linhas de frontispício, cabeçalho ou índice que precedem o primeiro registro devem ser ignoradas.
+    Se a página não contiver nenhum registro, retorne lista vazia.
+    Retorne também um breve raciocínio sobre como identificou as fronteiras entre registros.
+
   segment: |
     Você está analisando transcrições de manuscritos históricos em português brasileiro.
     Tipo de coleção: {collection_type} ({collection_name}).
@@ -68,7 +102,7 @@ a3:
     com uma expressão de data ("Aos X dias", "No primeiro dia", "Em X de mês", ou equivalentes).
     O exemplo de início para esta coleção é: '{record_start_hint}', mas variações semânticas
     equivalentes devem ser reconhecidas da mesma forma.
-
+    {avg_lines_hint_section}
     As transcrições podem conter erros de HTR (palavras deformadas, letras trocadas).
     Raciocine sobre o conteúdo semântico, não sobre a grafia exata.
 
