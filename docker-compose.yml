@@ -95,6 +95,8 @@ services:
     build:
       context: .
       dockerfile: evaluation/Dockerfile
+    volumes:
+      - ./volumes/output:/data/output   # salva eval_YYYY-MM-DD_HH-MM.json junto com os outputs do pipeline
     ports:
       - "8001:8001"
     networks:

@@ -386,18 +386,26 @@ class A0Orchestrator:
         Retorna lista de Records com structured_output preenchido.
         """
         lines = list(page.lines.values())
-        n = len(lines)
-        logger.info("A0: [A2] transcrevendo %d linhas...", n)
+        valid_lines = [l for l in lines if l.is_valid]
+        n_total = len(lines)
+        n_valid = len(valid_lines)
+        if n_total != n_valid:
+            logger.info(
+                "A0: [A2] %d linhas (%d válidas, %d outliers ignorados)",
+                n_total, n_valid, n_total - n_valid,
+            )
+        else:
+            logger.info("A0: [A2] transcrevendo %d linhas...", n_valid)
         t_a2 = time.time()
-        for i, line in enumerate(lines, start=1):
-            logger.info("A0: [A2] linha %d/%d — %s", i, n, line.id)
+        for i, line in enumerate(valid_lines, start=1):
+            logger.info("A0: [A2] linha %d/%d — %s", i, n_valid, line.id)
             self._a2.transcribe_line(line)
             logger.info("A0: [A2] → '%s'", (line.htr_text or "")[:80])
         logger.info("A0: [A2] concluído em %.1fs", time.time() - t_a2)
 
         logger.info("A0: [A3] segmentando registros...")
         t_a3 = time.time()
-        records = self._a3.segment(lines, collection_config, page.filename)
+        records = self._a3.segment(valid_lines, collection_config, page.filename)
         logger.info("A0: [A3] %d registros em %.1fs", len(records), time.time() - t_a3)
 
         if collection_config.record_template:

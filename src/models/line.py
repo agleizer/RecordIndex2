@@ -23,6 +23,7 @@ class Line:
     page_filename: str = ""                      # preenchido por Page.add_line()
     bbox: tuple = field(default_factory=tuple)   # (x1, y1, x2, y2) — A1
     entities: dict = field(default_factory=dict) # A5 output
+    is_valid: bool = True                        # False = outlier estatístico (A1)
 
     @property
     def best_text(self) -> str:
@@ -36,4 +37,5 @@ class Line:
             "htr_text": self.htr_text,
             "corrected_text": self.corrected_text,
             "bbox": list(self.bbox) if self.bbox else [],
+            "is_valid": self.is_valid,
         }

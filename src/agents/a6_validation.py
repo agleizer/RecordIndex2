@@ -31,6 +31,7 @@ Feedback para A0 (implementação futura com LangGraph):
 
 import json
 import logging
+import re
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
@@ -61,6 +62,9 @@ _DATE_INDICATORS = {
 # Campos cujo conteúdo é esperado como nome próprio
 _NAME_FIELDS = {"nome", "pai", "mae", "noivo", "noiva",
                 "pai_noivo", "mae_noivo", "pai_noiva", "mae_noiva"}
+
+# Placeholder não preenchido pelo A4: <CAMPO> ou <CAMPO_COMPOSTO>
+_PLACEHOLDER_RE = re.compile(r'<[A-Z][A-Z_]*>')
 
 
 class _LLMValidationOutput(BaseModel):
@@ -147,7 +151,10 @@ class A6ValidationAgent:
             value = record.structured_output.get(field_name, "")
             errors: list[str] = []
 
-            if self._is_noise(value):
+            if _PLACEHOLDER_RE.search(value):
+                errors.append("placeholder não preenchido — A4 não completou o template")
+                score -= self.SCORE_EMPTY
+            elif self._is_noise(value):
                 errors.append("campo vazio ou sem informação")
                 score -= self.SCORE_EMPTY
             else:

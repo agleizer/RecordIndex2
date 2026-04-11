@@ -29,6 +29,23 @@ from src.models.page import Page
 
 logger = logging.getLogger("recordindex.a1")
 
+# --- Filtros de qualidade de recorte ---
+#
+# Piso absoluto de largura (A1_MIN_WIDTH): descarta fragmentos irrecuperáveis antes
+# de qualquer cálculo estatístico. Não há equivalente para altura/aspect porque a
+# detecção IQR é mais robusta que um threshold fixo para essas dimensões.
+_MIN_WIDTH = int(os.getenv("A1_MIN_WIDTH", "200"))
+#
+# Detecção estatística de outliers (IQR por página):
+# A1_OUTLIER_SENSITIVITY (k): multiplica o IQR para definir a cerca inferior.
+#   Q1 - k * IQR  → abaixo dessa cerca = outlier.
+#   k=1.5 padrão estatístico; k=1.0 mais agressivo; k=2.5 mais permissivo.
+# A1_OUTLIER_MIN_LINES: mínimo de linhas na página para aplicar o cálculo.
+#   Páginas com poucas linhas têm IQR instável; abaixo desse limite, apenas o
+#   piso absoluto de largura se aplica.
+_OUTLIER_K         = float(os.getenv("A1_OUTLIER_SENSITIVITY",  "1.5"))
+_OUTLIER_MIN_LINES = int(os.getenv("A1_OUTLIER_MIN_LINES",      "6"))
+
 
 class A1LineSegmentationAgent:
     """
@@ -98,10 +115,8 @@ class A1LineSegmentationAgent:
             image_rgb, raw_output=True, mask_output=True, overlap_output=True
         )
 
-        # Dimensão mínima exigida pelo Qwen3VL (SmartResize faz panic abaixo disso)
-        MIN_DIM = 32
-
         # Coletar linhas de texto — ignorar class_id 0 (background)
+        # Aplica apenas o piso absoluto de largura; filtragem estatística vem depois.
         candidates: list[tuple] = []
         for class_id, objects in detected_polygons.items():
             if class_id == 0:
@@ -110,23 +125,21 @@ class A1LineSegmentationAgent:
                 raw_pts = obj["polygon"]
                 pts = np.array([(int(p[0]), int(p[1])) for p in raw_pts], dtype=np.int32)
                 x, y, w, h = cv2.boundingRect(pts)
-                # Garantir que bbox está dentro dos limites da imagem
                 x = max(0, x)
                 y = max(0, y)
                 w = min(w, w_img - x)
                 h = min(h, h_img - y)
                 if w <= 0 or h <= 0:
                     continue
-                # Ignorar recortes menores que o mínimo do VLM
-                if w < MIN_DIM or h < MIN_DIM:
-                    logger.warning("A1: recorte ignorado — muito pequeno (%dx%d px)", w, h)
+                if w < _MIN_WIDTH:
+                    logger.debug("A1: recorte descartado — largura %dpx < mínimo %dpx", w, _MIN_WIDTH)
                     continue
                 centroid_y = y + h / 2
                 candidates.append((centroid_y, x, y, w, h))
 
         # Ordenar de cima para baixo
         candidates.sort(key=lambda c: c[0])
-        logger.info("A1: %d linhas detectadas em '%s'", len(candidates), page_stem)
+        logger.info("A1: %d linhas candidatas em '%s'", len(candidates), page_stem)
 
         page = Page(filename=page_stem, image_path=image_path)
 
@@ -143,5 +156,65 @@ class A1LineSegmentationAgent:
             )
             page.add_line(line)
 
-        logger.info("A1: %d recortes salvos em '%s'", len(page.lines), output_dir)
+        # Detecção estatística de outliers — marca line.is_valid = False
+        n_invalid = self._mark_outliers(page)
+        n_valid = len(page.lines) - n_invalid
+        logger.info(
+            "A1: %d linhas em '%s' (%d válidas, %d outliers marcados)",
+            len(page.lines), page_stem, n_valid, n_invalid,
+        )
         return page
+
+    def _mark_outliers(self, page: Page) -> int:
+        """
+        Detecta linhas outlier usando IQR por página e marca line.is_valid = False.
+
+        Dimensões analisadas:
+          - altura do bbox (h): filtra separadores horizontais e rabiscos finos
+          - aspect ratio (w/h): filtra blobs quadrados (carimbos, ornamentos, selos)
+
+        Largura não entra no IQR — a distribuição por página costuma ser bimodal
+        (linhas cheias vs. fins de parágrafo), o que tornaria o IQR instável.
+        A largura mínima absoluta (_MIN_WIDTH) já cobre os fragmentos mais estreitos.
+
+        Retorna o número de linhas marcadas como inválidas.
+        """
+        lines = list(page.lines.values())
+        if len(lines) < _OUTLIER_MIN_LINES:
+            logger.debug(
+                "A1: página '%s' tem %d linhas (< %d) — detecção IQR ignorada",
+                page.filename, len(lines), _OUTLIER_MIN_LINES,
+            )
+            return 0
+
+        heights = np.array([l.bbox[3] - l.bbox[1] for l in lines], dtype=float)
+        aspects = np.array(
+            [(l.bbox[2] - l.bbox[0]) / max(l.bbox[3] - l.bbox[1], 1) for l in lines],
+            dtype=float,
+        )
+
+        def lower_fence(values: np.ndarray) -> float:
+            q1, q3 = np.percentile(values, [25, 75])
+            return float(q1 - _OUTLIER_K * (q3 - q1))
+
+        h_fence   = lower_fence(heights)
+        asp_fence = lower_fence(aspects)
+
+        logger.debug(
+            "A1: '%s' — cercas IQR (k=%.1f): h>%.1fpx  asp>%.2f",
+            page.filename, _OUTLIER_K, h_fence, asp_fence,
+        )
+
+        n_invalid = 0
+        for line, h, asp in zip(lines, heights, aspects):
+            reasons = []
+            if h < h_fence:
+                reasons.append(f"h={h:.0f}px < cerca {h_fence:.1f}")
+            if asp < asp_fence:
+                reasons.append(f"asp={asp:.2f} < cerca {asp_fence:.2f}")
+            if reasons:
+                line.is_valid = False
+                n_invalid += 1
+                logger.debug("A1: outlier '%s' — %s", line.id, ", ".join(reasons))
+
+        return n_invalid

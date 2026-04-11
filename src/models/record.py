@@ -28,11 +28,14 @@ class Record:
         self.lines[line.id] = line
 
     def get_concatenated_text(self) -> str:
-        """Retorna corrected_text (A4) se disponível, senão concatena line.best_text."""
+        """Retorna corrected_text (A4) se disponível, senão concatena line.best_text.
+        Linhas marcadas como inválidas (is_valid=False) são excluídas da concatenação."""
         if self.corrected_text:
             return self.corrected_text
         return " ".join(
-            line.best_text for line in self.lines.values() if line.best_text
+            line.best_text
+            for line in self.lines.values()
+            if line.best_text and line.is_valid
         )
 
     def to_dict(self) -> dict:

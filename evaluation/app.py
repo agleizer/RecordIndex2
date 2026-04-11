@@ -13,9 +13,13 @@ não usa GPU, não chama agentes. É executado após o pipeline, offline.
 
 import json
 import logging
+from datetime import datetime
+from pathlib import Path
 
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import JSONResponse
+
+OUTPUT_DIR = Path("/data/output")
 
 from csv_parser import parse_reference_csv
 from matcher import align
@@ -120,10 +124,22 @@ async def evaluate(
         record_comparisons.append(entry)
 
     # --- Resposta ---
-    return {
+    result = {
         "collection_type": collection_type,
         "segmentation": seg,
         "extraction": ext,
         "record_comparisons": record_comparisons,
         "unmatched_output_ids": [r.get("id") for r in unmatched_outputs],
     }
+
+    # --- Persistência ---
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    eval_path = OUTPUT_DIR / f"eval_{timestamp}.json"
+    try:
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        eval_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info("Resultado salvo em %s", eval_path)
+    except Exception as e:
+        logger.warning("Não foi possível salvar eval em disco: %s", e)
+
+    return result

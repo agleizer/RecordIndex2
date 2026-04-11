@@ -43,10 +43,18 @@ _COMMENTARY_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# Placeholders não preenchidos pelo LLM: <CAMPO> ou <CAMPO_COMPOSTO>
+_PLACEHOLDER_RE = re.compile(r'<[A-Z][A-Z_]*>')
+
 
 def _strip_commentary(text: str) -> str:
     """Remove notas e comentários adicionados pelo LLM após o texto corrigido."""
     return _COMMENTARY_RE.sub("", text).strip()
+
+
+def _has_unfilled_placeholders(text: str) -> bool:
+    """Retorna True se o texto ainda contém placeholders <CAMPO> não preenchidos."""
+    return bool(_PLACEHOLDER_RE.search(text))
 
 
 class A4CorrectionAgent:
@@ -84,6 +92,13 @@ class A4CorrectionAgent:
                 "A4: registro %d — comentário removido (%d→%d chars)",
                 record.id, len(result.content.strip()), len(corrected),
             )
+
+        if _has_unfilled_placeholders(corrected):
+            logger.warning(
+                "A4: registro %d — LLM não preencheu os placeholders; corrected_text descartado",
+                record.id,
+            )
+            return ""
 
         record.corrected_text = corrected
         logger.info("A4: registro %d corrigido (%d chars)", record.id, len(corrected))
