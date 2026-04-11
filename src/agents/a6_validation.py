@@ -64,7 +64,11 @@ _NAME_FIELDS = {"nome", "pai", "mae", "noivo", "noiva",
                 "pai_noivo", "mae_noivo", "pai_noiva", "mae_noiva"}
 
 # Placeholder não preenchido pelo A4: <CAMPO> ou <CAMPO_COMPOSTO>
-_PLACEHOLDER_RE = re.compile(r'<[A-Z][A-Z_]*>')
+# Exclui tags estruturais <OPT> e <VAR> — são containers, não placeholders de dados.
+_STRUCTURAL_TAGS = {"OPT", "VAR"}
+_PLACEHOLDER_RE = re.compile(
+    r'<(?!' + '|'.join(t + r'\b' for t in _STRUCTURAL_TAGS) + r')[A-Z][A-Z_]*>'
+)
 
 
 class _LLMValidationOutput(BaseModel):

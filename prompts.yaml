@@ -124,8 +124,9 @@ a4:
     Regras:
     - Mantenha o texto fixo do molde exatamente como está.
     - Substitua apenas os placeholders (marcados com <NOME>) pelos dados extraídos do texto.
-    - Se um trecho marcado como opcional (<OPT>...</OPT>) não tiver correspondência no texto,
-      remova-o junto com as tags <OPT> e </OPT>.
+    - Se um trecho marcado como opcional (<OPT>...</OPT> ou <VAR>...</VAR>) não tiver
+      correspondência no texto, remova-o junto com as suas tags de abertura e fechamento.
+      Se o trecho tiver correspondência, mantenha o conteúdo e remova apenas as tags.
     - Preserve nomes próprios exatamente como aparecem no texto — não "corrija" grafias de nomes.
     - Se um placeholder não puder ser preenchido, mantenha-o como está no molde.
     - Retorne APENAS o texto corrigido, sem explicações, notas ou comentários.
@@ -134,6 +135,27 @@ a4:
     {record_template}
 
     Texto com erros:
+    {text}
+
+  correct_fallback: |
+    Preencha cada placeholder do MOLDE com o valor correspondente extraído do TEXTO.
+    Placeholders são marcados com sinais de menor/maior: <ASSIM>.
+
+    EXEMPLO:
+    MOLDE: "Aos <DIA> dias de <MES> de <ANO>, batizei <NOME>, filho de <PAI> e <MAE>."
+    TEXTO: "Aos tres dias de Janeiro do anno de 1863 baptisei Rosa filha de João Fran cisco de Freitas e Luiza Joaquina"
+    RESULTADO CORRETO: "Aos tres dias de Janeiro de 1863, batizei Rosa, filho de João Fran cisco de Freitas e Luiza Joaquina."
+
+    Agora faça o mesmo com o MOLDE e TEXTO abaixo.
+    Substitua TODOS os placeholders <ASSIM> pelos valores do TEXTO.
+    Trechos entre <OPT>...</OPT> ou <VAR>...</VAR> são opcionais: mantenha o conteúdo
+    (sem as tags) se tiver correspondência no texto; remova o trecho inteiro se não tiver.
+    Retorne APENAS o resultado preenchido, sem explicações.
+
+    MOLDE:
+    {record_template}
+
+    TEXTO:
     {text}
 
 # Descrições de campos por tipo de coleção — usadas pelo A5 no prompt de extração.

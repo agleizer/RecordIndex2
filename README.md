@@ -846,11 +846,39 @@ Documentação do protocolo completo: `02_desenvolvimento/2026_03_23_protocolo_a
 
 ---
 
-## Escopo: TCC vs Produto
+## Escopo: TCC 1 vs TCC 2 vs Produto
 
-Esta seção documenta decisões de escopo explícitas — o que foi descartado intencionalmente e por quê, para não reabrir discussões resolvidas.
+Esta seção documenta as fronteiras de escopo entre as fases do projeto — o que pertence a cada etapa, para não reabrir discussões resolvidas.
 
-### API síncrona é suficiente para o TCC
+### TCC 1 (entrega atual) — pipeline funcional com métricas
+
+**Objetivo:** ter o pipeline A0–A6 funcionando de ponta a ponta, com métricas de avaliação aceitáveis, e usar os resultados para escrever o relatório.
+
+O relatório do TCC 1 descreve:
+- A arquitetura multi-agente (PEAS, tipos de agente, contratos A0↔A3/A5/A6)
+- As decisões de implementação e os trade-offs técnicos
+- Os resultados quantitativos do protocolo de avaliação (P/R/F1 por campo)
+- A comparação com o RecordIndex v1.0 como linha de base histórica
+
+O que **não** entra no TCC 1: comparação exaustiva de modelos, app com usuários, infraestrutura de produção, testes em escala com cloud.
+
+### TCC 2 — experimentação em escala e engenharia de software
+
+O TCC 2 usa o sistema construído no TCC 1 como base para dois eixos:
+
+**Eixo 1 — Experimentação em escala:**
+- Rodar o mesmo pipeline em infraestrutura cloud (AWS ou similar)
+- Usar modelos Ollama de grande porte (200–300B parâmetros) — o "melhor dos dois mundos": privacidade/custo do Ollama local com qualidade de modelos frontier
+- Comparação sistemática entre configurações de modelo por agente
+- Novos tipos de coleção (casamentos, óbitos, outras dioceses)
+
+**Eixo 2 — Engenharia de software e produto:**
+- API assíncrona com jobs (`job_id`, polling, armazenamento)
+- Mensageria (filas, workers)
+- Frontend para usuários (Streamlit ou similar)
+- Autenticação, multi-tenancy, histórico de coleções
+
+### API síncrona é suficiente para o TCC 1
 
 O `/pipeline/run` atual é **síncrono**: bloqueia até o pipeline terminar e retorna o resultado. Para um produto real com usuários submetendo documentos, isso seria um problema — o pipeline pode levar minutos para uma página completa.
 
@@ -1225,10 +1253,71 @@ A3 está sendo conservador demais — prefere criar muitos registros pequenos a 
 
 ---
 
+### DT-15 — A2: regurgita prompt em imagens ilegíveis
+
+**Descoberto em:** 11/04/2026 — teste gemma4 by-line.
+
+**Problema:** quando a imagem é ilegível (ink bleed through), o gemma4 retorna o texto do próprio prompt do A2 em vez de tentar transcrever. O texto do prompt (~400 chars) passava pelo filtro `A3_MIN_HTR_CHARS=8` e contaminava registros.
+
+**Solução implementada:** `_sanitize(text, image_name)` em `a2_htr.py`. Verifica substrings `_PROMPT_LEAK_MARKERS` (ex: "especialista em transcrição") e `_DEGRADATION_LABELS` (ex: "Tinta Repassada"). Se detectado, retorna `[ILEGÍVEL]` + WARNING no log. `[ILEGÍVEL]` propagado como token de ruído em A3 pre-filter, A5 `_NOISE_TOKENS`, A6 `_NOISE_VALUES`.
+
+**Status:** mitigado. Funcional com gemma4. Claude Sonnet raramente produz esse comportamento.
+
+---
+
+### DT-16 — A0: log hardcoded "Claude" no modo page
+
+**Descoberto em:** 11/04/2026 — revisão de código.
+
+**Problema:** mensagem de log em `a0_orchestrator.py` usava string literal "Claude transcreveu N linhas" em vez de `self._config.a2_model`.
+
+**Solução:** substituído por `"%s transcreveu %d linhas", self._config.a2_model, ...`
+
+**Status:** corrigido.
+
+---
+
+### DT-17 — A4/A6: tag `<VAR>` detectada como placeholder não preenchido
+
+**Descoberto em:** 11/04/2026 — análise do template de batismo do Porto da Cruz.
+
+**Problema:** `_PLACEHOLDER_RE = re.compile(r'<[A-Z][A-Z_]*>')` foi projetado para detectar placeholders de dados (`<NOME>`, `<DIA>`) não preenchidos. Mas o template de batismo usa `<VAR>...</VAR>` como tag estrutural de seção variável (igual ao `<OPT>`). A regex detectava `<VAR>` como placeholder não preenchido, fazendo com que A4 descartasse o resultado mesmo quando todos os campos de dados haviam sido preenchidos corretamente. O mesmo regex existe no A6 para detectar outputs do A4 com placeholders restantes.
+
+**Solução:** negative lookahead na regex excluindo tags estruturais conhecidas:
+```python
+_STRUCTURAL_TAGS = {"OPT", "VAR"}
+_PLACEHOLDER_RE = re.compile(
+    r'<(?!' + '|'.join(t + r'\b' for t in _STRUCTURAL_TAGS) + r')[A-Z][A-Z_]*>'
+)
+```
+Aplicado em `a4_correction.py` e `a6_validation.py`. Prompts do A4 atualizados para explicar comportamento de `<VAR>`.
+
+**Status:** corrigido.
+
+---
+
+### DT-18 — A4: gemma4 não preenche placeholders do template
+
+**Descoberto em:** 11/04/2026 — análise dos 3 testes E2E (100% de falha com gemma4).
+
+**Problema:** o A4 enviava template + texto ao gemma4 e o modelo devolvia o template intacto (sem substituir os placeholders) ou o texto bruto sem estrutura. A tarefa requer extrair ~15 valores do texto HTR ruidoso e injetá-los em posições específicas do template — complexidade alta para um modelo 4B.
+
+**Solução implementada:** estratégia em duas tentativas em `a4_correction.py`:
+1. Prompt padrão (`a4/correct`) — mesmo comportamento anterior
+2. Se placeholders permanecerem, fallback com `a4/correct_fallback` — prompt com exemplo concreto completo (MOLDE → TEXTO → RESULTADO CORRETO) e marcadores explícitos
+
+**Fix correto:** usar modelo com maior capacidade de instruction-following para A4. Com Claude Sonnet no A2 gerando texto limpo, Claude ou qwen2.5:7b no A4 deve resolver.
+
+**Status:** mitigado com fallback. Fix definitivo = modelo mais capaz no A4.
+
+---
+
 ## Contexto acadêmico
 
 **RecordIndex v1.0** (IC/IT): pipeline Transkribus → PyLaia HTR → doc-UFCN segmentação → similaridade cosseno para agrupamento → Ollama para correção → export.
 
-**RecordIndex 2.0** (TCC): arquitetura multi-agente onde LLMs multimodais assumem HTR, segmentação de registros e extração de entidades. doc-UFCN permanece para segmentação de linhas (tarefa estrutural onde CNNs ainda são competitivas). A transição é justificada pela hipótese de que VLMs generalizam melhor para scripts históricos sem fine-tuning específico.
+**RecordIndex 2.0 — TCC 1** (entrega 06/2026): arquitetura multi-agente onde LLMs multimodais assumem HTR, segmentação de registros e extração de entidades. doc-UFCN permanece para segmentação de linhas (tarefa estrutural onde CNNs ainda são competitivas). Objetivo do TCC 1: pipeline funcional com métricas de avaliação aceitáveis + relatório baseado nos resultados reais do sistema.
 
-Hipótese central: LLMs melhoram a transcrição de texto padrão mas podem degradar nomes próprios (alucinação). O protocolo de avaliação mede isso explicitamente por campo.
+**RecordIndex 2.0 — TCC 2** (fase futura): usar o pipeline do TCC 1 para experimentação em escala (cloud + modelos 200–300B parâmetros) e evolução para produto (API assíncrona, mensageria, usuários, frontend). O TCC 2 não recomeça do zero — constrói sobre a fundação do TCC 1.
+
+Hipótese central (TCC 1): LLMs melhoram a transcrição de texto padrão mas podem degradar nomes próprios (alucinação). O protocolo de avaliação mede isso explicitamente por campo.

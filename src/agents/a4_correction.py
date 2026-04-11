@@ -43,8 +43,13 @@ _COMMENTARY_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
-# Placeholders não preenchidos pelo LLM: <CAMPO> ou <CAMPO_COMPOSTO>
-_PLACEHOLDER_RE = re.compile(r'<[A-Z][A-Z_]*>')
+# Placeholders de dados não preenchidos: <CAMPO> ou <CAMPO_COMPOSTO>
+# Exclui tags estruturais conhecidas (<OPT>, <VAR>) que são containers opcionais,
+# não placeholders de dados — o modelo deve remover ou manter essas tags intactas.
+_STRUCTURAL_TAGS = {"OPT", "VAR"}
+_PLACEHOLDER_RE = re.compile(
+    r'<(?!' + '|'.join(t + r'\b' for t in _STRUCTURAL_TAGS) + r')[A-Z][A-Z_]*>'
+)
 
 
 def _strip_commentary(text: str) -> str:
@@ -62,6 +67,15 @@ class A4CorrectionAgent:
     def __init__(self, model: BaseChatModel):
         self._model = disable_think(model)
         self._prompt_template = get_prompt("a4", "correct")
+        self._fallback_template = get_prompt("a4", "correct_fallback")
+
+    def _invoke(self, prompt: str) -> str:
+        """Invoca o modelo e aplica strip de comentários."""
+        result = self._model.invoke([HumanMessage(content=prompt)])
+        corrected = _strip_commentary(result.content)
+        if len(corrected) < len(result.content.strip()):
+            logger.debug("A4: comentário removido (%d→%d chars)", len(result.content.strip()), len(corrected))
+        return corrected
 
     def correct(self, record: Record, collection_config: CollectionConfig) -> str:
         """
@@ -69,39 +83,45 @@ class A4CorrectionAgent:
 
         Preenche record.corrected_text in-place e retorna o texto corrigido.
         Se collection_config.record_template estiver vazio, retorna '' sem chamar o LLM.
+
+        Estratégia em duas tentativas:
+          1. Prompt padrão (a4/correct)
+          2. Se placeholders permanecerem, fallback com exemplo explícito (a4/correct_fallback)
         """
         if not collection_config.record_template:
             return ""
 
-        # get_concatenated_text() sabe sobre page_text (modo page) e line concat (modo line)
         raw_text = record.get_concatenated_text()
         if not raw_text.strip():
             logger.warning("A4: registro %d sem texto — correção pulada", record.id)
             return ""
 
-        prompt = self._prompt_template.format(
-            record_template=collection_config.record_template,
-            text=raw_text,
+        fmt_args = dict(record_template=collection_config.record_template, text=raw_text)
+
+        # --- Tentativa 1: prompt padrão ---
+        corrected = self._invoke(self._prompt_template.format(**fmt_args))
+        if not _has_unfilled_placeholders(corrected):
+            record.corrected_text = corrected
+            logger.info("A4: registro %d corrigido (%d chars)", record.id, len(corrected))
+            return corrected
+
+        logger.warning(
+            "A4: registro %d — placeholders não preenchidos na 1ª tentativa; ativando fallback",
+            record.id,
         )
-        result = self._model.invoke([HumanMessage(content=prompt)])
-        corrected = _strip_commentary(result.content)
 
-        if len(corrected) < len(result.content.strip()):
-            logger.debug(
-                "A4: registro %d — comentário removido (%d→%d chars)",
-                record.id, len(result.content.strip()), len(corrected),
-            )
+        # --- Tentativa 2: prompt com exemplo explícito ---
+        corrected = self._invoke(self._fallback_template.format(**fmt_args))
+        if not _has_unfilled_placeholders(corrected):
+            record.corrected_text = corrected
+            logger.info("A4: registro %d corrigido via fallback (%d chars)", record.id, len(corrected))
+            return corrected
 
-        if _has_unfilled_placeholders(corrected):
-            logger.warning(
-                "A4: registro %d — LLM não preencheu os placeholders; corrected_text descartado",
-                record.id,
-            )
-            return ""
-
-        record.corrected_text = corrected
-        logger.info("A4: registro %d corrigido (%d chars)", record.id, len(corrected))
-        return corrected
+        logger.warning(
+            "A4: registro %d — LLM não preencheu os placeholders após fallback; corrected_text descartado",
+            record.id,
+        )
+        return ""
 
     def __call__(self, state: dict) -> dict:
         record = state["current_record"]
