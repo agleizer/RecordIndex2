@@ -99,7 +99,9 @@ class A0Orchestrator:
             get_chat_model(config.a5_provider, config.a5_model, config.ollama_base_url)
         )
         self._a6 = A6ValidationAgent(
-            get_chat_model(config.a6_provider, config.a6_model, config.ollama_base_url)
+            get_chat_model(config.a6_provider, config.a6_model, config.ollama_base_url),
+            llm_threshold=config.a6_llm_threshold,
+            num_predict=config.a6_num_predict,
         )
 
         # Fallback A2: re-transcreve registros com score abaixo do threshold
@@ -348,8 +350,8 @@ class A0Orchestrator:
                 f"A0: não foi possível classificar — nenhuma imagem em '{collection_input.image_dir}'"
             )
 
-        # Selecionar até 3 páginas aleatórias
-        sample_size = min(3, len(image_files))
+        # Selecionar até N páginas aleatórias (configurável via A0_CLASSIFY_SAMPLE_PAGES)
+        sample_size = min(self._config.a0_classify_sample_pages, len(image_files))
         sampled_pages = random.sample(image_files, sample_size)
 
         tmp_lines_dir = tempfile.mkdtemp(prefix="a0_classify_")
@@ -456,9 +458,9 @@ class A0Orchestrator:
         Só tem valor para modo line — em modo page os registros não têm linhas individuais.
         """
         history = self._lines_per_record_history
-        if len(history) < 3:
+        if len(history) < self._config.a0_avg_lines_min_history:
             return None
-        recent = history[-20:]
+        recent = history[-self._config.a0_avg_lines_window:]
         return round(sum(recent) / len(recent))
 
     @staticmethod

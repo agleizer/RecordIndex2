@@ -15,16 +15,18 @@ Threshold final: 0.80 (score composto)
   - JW é tolerante a prefixos, boa escolha para nomes próprios
 """
 
+import os
 import unicodedata
 from rapidfuzz.distance import JaroWinkler
 
-MATCH_THRESHOLD = 0.80
+# Threshold final para aceitar um alinhamento GT↔output.
+MATCH_THRESHOLD = float(os.getenv("EVAL_MATCH_THRESHOLD", "0.80"))
 # Pré-filtro: campo primário JW deve ser >= isso para o registro ser candidato.
 # Evita que campos secundários resgatem uma correspondência completamente errada.
-NOME_MIN = 0.65
+NOME_MIN = float(os.getenv("EVAL_NOME_MIN", "0.65"))
 # Rescue: se nome falha o pré-filtro mas a média dos campos secundários presentes
 # atinge esse threshold, o par ainda é considerado (pai+mae corretos, nome errado).
-SECONDARY_RESCUE_MIN = 0.85
+SECONDARY_RESCUE_MIN = float(os.getenv("EVAL_SECONDARY_RESCUE_MIN", "0.85"))
 
 # Pesos por tipo de coleção: (campo_primário, {campo: peso})
 # O primeiro campo da lista é o "primary" — sujeito ao pré-filtro NOME_MIN.

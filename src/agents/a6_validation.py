@@ -74,19 +74,21 @@ class _LLMValidationOutput(BaseModel):
 
 class A6ValidationAgent:
 
+    # Penalidades de score — sistema calibrado, não exposto no .env.
+    # Alterar um sem os demais quebra a escala 0–1 do verdict.
     SCORE_EMPTY = 0.25        # penalidade por campo obrigatório vazio
     SCORE_NOISE = 0.15        # penalidade por ruído HTR no campo
     SCORE_SUSPICIOUS = 0.10   # penalidade por conteúdo suspeito
     SCORE_UNGROUNDED = 0.20   # penalidade por valor não encontrado no texto fonte
-    LLM_THRESHOLD = 0.8       # aciona LLM apenas se score < threshold
     _GROUNDING_MIN_WORD = 3   # tamanho mínimo de palavra para verificar grounding
 
-    def __init__(self, model: BaseChatModel):
+    def __init__(self, model: BaseChatModel, llm_threshold: float = 0.8, num_predict: int = 200):
+        self._llm_threshold = llm_threshold
         # Limitar tokens gerados pelo LLM — análise de validação deve ser concisa
         try:
             from langchain_ollama import ChatOllama
             if isinstance(model, ChatOllama):
-                model = model.model_copy(update={"num_predict": 200})
+                model = model.model_copy(update={"num_predict": num_predict})
         except ImportError:
             pass
         self._chain = make_structured(model, _LLMValidationOutput)
@@ -252,7 +254,7 @@ class A6ValidationAgent:
         score, field_errors = self._run_rules(record, config)
         notes = ""
 
-        if score < self.LLM_THRESHOLD and field_errors:
+        if score < self._llm_threshold and field_errors:
             logger.info(
                 "A6: registro %d score=%.2f — acionando LLM para análise",
                 record.id, score,

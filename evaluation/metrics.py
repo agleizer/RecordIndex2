@@ -16,10 +16,12 @@ Métrica de data:
   Exact match é reportado separadamente (útil quando A5 retorna ISO diretamente).
 """
 
+import os
 import re
 from matcher import jaro_winkler
 
-FUZZY_THRESHOLD = 0.85
+# Threshold JW para considerar dois valores de campo como equivalentes (match fuzzy).
+FUZZY_THRESHOLD = float(os.getenv("EVAL_FUZZY_THRESHOLD", "0.85"))
 
 _MONTH_PT = {
     1: ["janeiro", "jan"],

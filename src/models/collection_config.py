@@ -11,6 +11,8 @@ Extensível: instancie CollectionConfig diretamente para coleções customizadas
 
 from dataclasses import dataclass, field
 
+from src.prompts import get_field_descriptions
+
 
 @dataclass
 class CollectionConfig:
@@ -44,12 +46,7 @@ class CollectionConfig:
                 "mae": str,
                 "data": str,
             },
-            field_descriptions={
-                "nome": "nome da pessoa batizada — aparece após 'dei o nome de' no texto",
-                "pai": "nome do pai da pessoa batizada — aparece após 'filho/a legítimo/a de'",
-                "mae": "nome da mãe da pessoa batizada — aparece após 'e de sua Mulher'",
-                "data": "data do batismo (dia, mês e ano) — aparece no início do registro",
-            },
+            field_descriptions=get_field_descriptions("batismo"),
         )
 
     @classmethod
@@ -67,15 +64,7 @@ class CollectionConfig:
                 "mae_noiva": str,
                 "data": str,
             },
-            field_descriptions={
-                "noivo": "nome do noivo",
-                "noiva": "nome da noiva",
-                "pai_noivo": "nome do pai do noivo",
-                "mae_noivo": "nome da mãe do noivo",
-                "pai_noiva": "nome do pai da noiva",
-                "mae_noiva": "nome da mãe da noiva",
-                "data": "data do casamento (dia, mês e ano)",
-            },
+            field_descriptions=get_field_descriptions("casamento"),
         )
 
     @classmethod
@@ -91,11 +80,5 @@ class CollectionConfig:
                 "data": str,
                 "idade": str,
             },
-            field_descriptions={
-                "nome": "nome da pessoa falecida",
-                "pai": "nome do pai da pessoa falecida",
-                "mae": "nome da mãe da pessoa falecida",
-                "data": "data do óbito (dia, mês e ano)",
-                "idade": "idade da pessoa falecida",
-            },
+            field_descriptions=get_field_descriptions("obito"),
         )

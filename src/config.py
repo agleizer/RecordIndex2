@@ -49,6 +49,25 @@ class Config:
     #   k=0 desabilita. Padrão 2.0 — apenas merges graves são tratados.
     a3_outlier_multiplier: float
 
+    # A6 — thresholds de validação
+    # a6_llm_threshold: aciona LLM de validação apenas quando score < threshold.
+    #   Aumentar para acionar com mais frequência; diminuir para economizar.
+    a6_llm_threshold: float
+    # a6_num_predict: limite de tokens gerados pelo LLM no A6.
+    #   200 é suficiente para análise concisa; aumentar se notas ficarem truncadas.
+    a6_num_predict: int
+
+    # A0 — parâmetros de classificação e segmentação
+    # a0_classify_sample_pages: número de páginas amostradas para classificar a coleção via LLM.
+    #   Aumentar para coleções mais heterogêneas.
+    a0_classify_sample_pages: int
+    # a0_avg_lines_window: tamanho da janela de histórico para calcular avg_lines_hint.
+    #   Janela menor reage mais rápido a variações; janela maior é mais estável.
+    a0_avg_lines_window: int
+    # a0_avg_lines_min_history: mínimo de registros fechados antes de usar avg_lines_hint.
+    #   Abaixo desse número o hint não é enviado ao A3.
+    a0_avg_lines_min_history: int
+
     # Debug
     debug: bool
 
@@ -78,5 +97,10 @@ class Config:
             samples_dir=os.getenv("SAMPLES_DIR", "/data/samples"),
             a3_min_htr_chars=int(os.getenv("A3_MIN_HTR_CHARS", "8")),
             a3_outlier_multiplier=float(os.getenv("A3_OUTLIER_MULTIPLIER", "2.0")),
+            a6_llm_threshold=float(os.getenv("A6_LLM_THRESHOLD", "0.8")),
+            a6_num_predict=int(os.getenv("A6_NUM_PREDICT", "200")),
+            a0_classify_sample_pages=int(os.getenv("A0_CLASSIFY_SAMPLE_PAGES", "3")),
+            a0_avg_lines_window=int(os.getenv("A0_AVG_LINES_WINDOW", "20")),
+            a0_avg_lines_min_history=int(os.getenv("A0_AVG_LINES_MIN_HISTORY", "3")),
             debug=os.getenv("DEBUG", "false").lower() == "true",
         )

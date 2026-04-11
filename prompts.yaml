@@ -136,6 +136,29 @@ a4:
     Texto com erros:
     {text}
 
+# Descrições de campos por tipo de coleção — usadas pelo A5 no prompt de extração.
+# Editável sem rebuild. Inclua a expressão âncora para guiar a extração no texto manuscrito.
+field_descriptions:
+  batismo:
+    nome: "nome da pessoa batizada — aparece após 'dei o nome de' no texto"
+    pai:  "nome do pai da pessoa batizada — aparece após 'filho/a legítimo/a de'"
+    mae:  "nome da mãe da pessoa batizada — aparece após 'e de sua Mulher'"
+    data: "data do batismo (dia, mês e ano) — aparece no início do registro"
+  casamento:
+    noivo:      "nome do noivo"
+    noiva:      "nome da noiva"
+    pai_noivo:  "nome do pai do noivo"
+    mae_noivo:  "nome da mãe do noivo"
+    pai_noiva:  "nome do pai da noiva"
+    mae_noiva:  "nome da mãe da noiva"
+    data:       "data do casamento (dia, mês e ano) — aparece no início do registro"
+  obito:
+    nome:  "nome da pessoa falecida"
+    pai:   "nome do pai da pessoa falecida"
+    mae:   "nome da mãe da pessoa falecida"
+    data:  "data do óbito (dia, mês e ano) — aparece no início do registro"
+    idade: "idade da pessoa falecida"
+
 a5:
   extract: |
     Você está extraindo informações de um registro de {collection_type} de manuscrito
