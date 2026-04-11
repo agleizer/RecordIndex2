@@ -22,6 +22,20 @@ _MEDIA_TYPES = {
     ".tif": "jpeg", ".tiff": "jpeg",
 }
 
+# Substrings do próprio prompt — se aparecerem na saída, o modelo regurgitou o prompt (DT-15)
+_PROMPT_LEAK_MARKERS = [
+    "especialista em transcrição",
+    "manuscritos históricos",
+    "Retorne APENAS o texto transcrito",
+]
+
+# Labels de degradação de imagem que modelos multimodais produzem em vez de transcrever
+_DEGRADATION_LABELS = [
+    "Tinta Repassada",
+    "Ink Bleed Through",
+    "Bleed Through",
+]
+
 
 class A2HTRAgent:
     """
@@ -50,10 +64,31 @@ class A2HTRAgent:
             {"type": "text", "text": self._prompt},
         ])
 
+    def _sanitize(self, text: str, image_name: str) -> str:
+        """
+        Detecta dois modos de falha do A2 e substitui por [ILEGÍVEL]:
+
+        1. Regurgitação de prompt (DT-15): modelo retorna o próprio prompt quando
+           a imagem é ilegível. Detectado por substrings características do prompt.
+        2. Labels de degradação: modelos multimodais rotulam imagens degradadas
+           com expressões como "Tinta Repassada | Ink Bleed Through" em vez de
+           transcrever o texto. São ruído para A3 e A5.
+        """
+        tl = text.lower()
+        for marker in _PROMPT_LEAK_MARKERS:
+            if marker.lower() in tl:
+                logger.warning("A2: prompt leak detectado em '%s' — substituindo por [ILEGÍVEL]", image_name)
+                return "[ILEGÍVEL]"
+        for label in _DEGRADATION_LABELS:
+            if label.lower() in tl:
+                logger.debug("A2: label de degradação em '%s' ('%s') — substituindo por [ILEGÍVEL]", image_name, text[:40])
+                return "[ILEGÍVEL]"
+        return text
+
     def transcribe(self, image_path: str) -> str:
         logger.debug("A2: transcrevendo '%s'", Path(image_path).name)
         result = self._model.invoke([self._build_message(image_path)])
-        text = result.content.strip()
+        text = self._sanitize(result.content.strip(), Path(image_path).name)
         logger.debug("A2: → '%s'", text[:80] + ("..." if len(text) > 80 else ""))
         return text
 
@@ -95,7 +130,11 @@ class A2HTRAgent:
 
         logger.info("A2 [page]: transcrevendo página '%s'", page.filename)
         result = self._model.invoke([message])
-        output_lines = [l.strip() for l in result.content.strip().splitlines() if l.strip()]
+        output_lines = [
+            self._sanitize(l.strip(), page.filename)
+            for l in result.content.strip().splitlines()
+            if l.strip()
+        ]
         logger.info("A2 [page]: '%s' concluído — %d linhas transcritas", page.filename, len(output_lines))
         return output_lines
 

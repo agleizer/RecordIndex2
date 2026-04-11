@@ -17,6 +17,10 @@ A chain é construída por chamada (não no __init__) porque o schema varia
 conforme o collection_type.
 """
 
+import json
+import logging
+import re
+
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from pydantic import create_model
@@ -26,11 +30,13 @@ from src.models.collection_config import CollectionConfig
 from src.models.record import Record
 from src.prompts import get_prompt
 
+logger = logging.getLogger("recordindex.a5")
+
 
 class A5NERAgent:
 
     MIN_TEXT_LEN = 20  # caracteres mínimos após limpeza para tentar extração
-    _NOISE_TOKENS = {"[?]", "[...]", "?", "..."}
+    _NOISE_TOKENS = {"[?]", "[...]", "?", "...", "[ILEGÍVEL]"}
 
     def __init__(self, model: BaseChatModel):
         # Modelo base — chain construída dinamicamente por collection_type
@@ -65,6 +71,50 @@ class A5NERAgent:
             cleaned = cleaned.replace(token, "")
         return len(cleaned.strip()) >= self.MIN_TEXT_LEN
 
+    def _build_prompt(self, collection_config: CollectionConfig, text: str) -> str:
+        field_list = "\n".join(
+            f"- {name}: {collection_config.field_descriptions.get(name, name)}"
+            for name in collection_config.extraction_fields
+        )
+        return self._prompt_template.format(
+            collection_type=collection_config.collection_type,
+            record_text=text,
+            field_list=field_list,
+        )
+
+    def _fallback_extract(
+        self, prompt: str, collection_config: CollectionConfig
+    ) -> dict:
+        """
+        Invocado quando structured output falha (ex: gemma retorna null ou markdown).
+        Reinvoca o modelo com instrução explícita de JSON e tenta extrair os campos.
+        """
+        fields = list(collection_config.extraction_fields.keys())
+        empty_example = {f: "" for f in fields}
+        retry_prompt = (
+            prompt
+            + "\n\n---\n"
+            "IMPORTANTE: Responda APENAS com JSON válido, sem texto antes ou depois. "
+            f"Formato obrigatório (todos os campos são strings):\n{json.dumps(empty_example, ensure_ascii=False)}"
+        )
+        raw = self._base_model.invoke([HumanMessage(content=retry_prompt)])
+        text = raw.content if hasattr(raw, "content") else str(raw)
+        logger.debug("A5 fallback raw response: %s", text[:400])
+
+        # Tenta extrair o primeiro objeto JSON do texto
+        match = re.search(r'\{[^{}]+\}', text, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group())
+                result = {f: str(data.get(f, "")) for f in fields}
+                logger.warning("A5 fallback OK: campos=%s", list(result.keys()))
+                return result
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        logger.warning("A5 fallback falhou — retornando campos vazios. Texto: %s", text[:200])
+        return {f: "" for f in fields}
+
     def extract(self, record: Record, collection_config: CollectionConfig) -> dict:
         """
         Extrai campos estruturados do registro.
@@ -79,17 +129,17 @@ class A5NERAgent:
             record.structured_output = result
             return result
 
-        field_list = "\n".join(
-            f"- {name}: {collection_config.field_descriptions.get(name, name)}"
-            for name in collection_config.extraction_fields
-        )
-        prompt = self._prompt_template.format(
-            collection_type=collection_config.collection_type,
-            record_text=text,
-            field_list=field_list,
-        )
-        output = chain.invoke([HumanMessage(content=prompt)])
-        result = output.model_dump()
+        prompt = self._build_prompt(collection_config, text)
+        try:
+            output = chain.invoke([HumanMessage(content=prompt)])
+            result = output.model_dump()
+        except Exception as e:
+            logger.warning(
+                "A5 structured output falhou (%s: %s) — ativando fallback",
+                type(e).__name__, str(e)[:120],
+            )
+            result = self._fallback_extract(prompt, collection_config)
+
         record.structured_output = result
         return result
 

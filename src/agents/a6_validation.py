@@ -48,7 +48,7 @@ logger = logging.getLogger("recordindex.a6")
 # Valores que indicam ausência de informação (ruído HTR ou A5 sem extração)
 _NOISE_VALUES = {
     "", "[?]", "[...]", "?", "...", "não encontrado", "não consta",
-    "ilegível", "ditto", "dito", "idem", "não informado",
+    "ilegível", "[ilegível]", "ditto", "dito", "idem", "não informado",
 }
 
 # Indicadores de conteúdo temporal para validar o campo data

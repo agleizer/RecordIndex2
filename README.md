@@ -1209,6 +1209,22 @@ A3 está sendo conservador demais — prefere criar muitos registros pequenos a 
 
 ---
 
+### DT-14 — A3/A5: gemma4:e4b ignora `json_schema` e retorna markdown
+
+**Descoberto em:** 11/04/2026 — primeiro teste E2E com gemma4:e4b, modo line.
+
+**Problema:** o `make_structured()` usa `method="json_schema"`, que passa o schema Pydantic completo via `format: {type: "object", properties: {...}}` para o Ollama. O gemma4:e4b ignora o schema e responde em texto/markdown livre. Isso não é bug do nosso código — o modelo recebe o schema mas não aplica constrained decoding.
+
+**Raiz do problema:** o Ollama suporta grammar-based constrained decoding (que força o JSON estruturalmente), mas nem todos os modelos têm suporte ativo a essa feature. O gemma4:e4b aceita `format: "json"` (json_mode), mas não o schema completo. Comportamento similar ao bug Qwen3.5+imagem documentado em DT-A2 (Semana 2).
+
+**Solução implementada:** fallback em A3 (`_fallback_boundaries`) e A5 (`_fallback_extract`) — quando o structured output lança `OutputParserException`, o agente reinvoca o modelo com instrução explícita de JSON no prompt e extrai o resultado por regex. Custo: ~2× a latência dos agentes afetados.
+
+**Fix correto:** usar qwen2.5:7b para A3/A4/A5 (já decidido — ver `project_model_selection.md`). O qwen2.5:7b respeita json_schema via Ollama. O gemma4:e4b continua como opção viável para A2 (HTR), onde structured output não é usado.
+
+**Status:** mitigado com fallback. Fix definitivo = trocar modelo A3/A4/A5 para qwen2.5:7b.
+
+---
+
 ## Contexto acadêmico
 
 **RecordIndex v1.0** (IC/IT): pipeline Transkribus → PyLaia HTR → doc-UFCN segmentação → similaridade cosseno para agrupamento → Ollama para correção → export.

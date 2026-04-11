@@ -25,7 +25,9 @@ Métodos públicos:
 Nada no modo line é alterado pelo modo page.
 """
 
+import json
 import logging
+import re
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
@@ -65,6 +67,7 @@ class PageRecordBlocks(BaseModel):
 class A3RecordSegmentationAgent:
 
     def __init__(self, model: BaseChatModel):
+        self._raw_model = model  # kept for structured-output fallback
         # Modo LINE
         self._chain = make_structured(model, RecordBoundaries)
         self._prompt_template = get_prompt("a3", "segment")
@@ -108,6 +111,83 @@ class A3RecordSegmentationAgent:
             numbered_lines=numbered,
         )
 
+    # ------------------------------------------------------------------
+    # Fallbacks para modelos que ignoram json_schema (ex: gemma4)
+    # ------------------------------------------------------------------
+
+    def _fallback_boundaries(self, prompt: str, n_lines: int) -> RecordBoundaries:
+        """
+        Invocado quando o structured output do modo LINE falha (OutputParserException).
+        Reinvoca o modelo com instrução explícita de JSON e tenta extrair os índices.
+        """
+        retry_prompt = (
+            prompt
+            + "\n\n---\n"
+            "IMPORTANTE: Responda APENAS com JSON válido, sem texto antes ou depois. "
+            "Formato obrigatório:\n"
+            '{"record_start_indices": [lista de inteiros], "reasoning": "explicação resumida"}'
+        )
+        raw = self._raw_model.invoke([HumanMessage(content=retry_prompt)])
+        text = raw.content if hasattr(raw, "content") else str(raw)
+        logger.debug("A3 fallback raw response: %s", text[:300])
+
+        # Tenta extrair objeto JSON do texto
+        match = re.search(r'\{[^{}]*"record_start_indices"[^{}]*\}', text, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group())
+                indices = sorted(set(
+                    i for i in data.get("record_start_indices", [])
+                    if isinstance(i, int) and 0 <= i < n_lines
+                ))
+                reasoning = data.get("reasoning", "fallback json parse")
+                logger.warning("A3 fallback OK: índices=%s", indices)
+                return RecordBoundaries(record_start_indices=indices, reasoning=reasoning)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Último recurso: extrai todos os números do texto e filtra pelo range válido
+        numbers = [int(n) for n in re.findall(r'\b(\d+)\b', text) if 0 <= int(n) < n_lines]
+        # Heurística: índices plausíveis tendem a aparecer poucas vezes — deduplica e ordena
+        indices = sorted(set(numbers))
+        logger.warning("A3 fallback regex: índices=%s (texto bruto truncado: %s)", indices, text[:200])
+        return RecordBoundaries(
+            record_start_indices=indices,
+            reasoning=f"Fallback regex — structured output falhou. Texto bruto: {text[:300]}",
+        )
+
+    def _fallback_page_blocks(self, prompt: str) -> PageRecordBlocks:
+        """
+        Invocado quando o structured output do modo PAGE falha.
+        Reinvoca com instrução explícita de JSON.
+        """
+        retry_prompt = (
+            prompt
+            + "\n\n---\n"
+            "IMPORTANTE: Responda APENAS com JSON válido, sem texto antes ou depois. "
+            "Formato obrigatório:\n"
+            '{"record_texts": ["texto do registro 1", "texto do registro 2", ...], "reasoning": "explicação resumida"}'
+        )
+        raw = self._raw_model.invoke([HumanMessage(content=retry_prompt)])
+        text = raw.content if hasattr(raw, "content") else str(raw)
+        logger.debug("A3 page fallback raw response: %s", text[:300])
+
+        match = re.search(r'\{[^{}]*"record_texts".*?\}', text, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group())
+                texts = [t for t in data.get("record_texts", []) if isinstance(t, str) and t.strip()]
+                reasoning = data.get("reasoning", "fallback json parse")
+                logger.warning("A3 page fallback OK: %d blocos", len(texts))
+                return PageRecordBlocks(record_texts=texts, reasoning=reasoning)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        logger.warning("A3 page fallback falhou — retornando lista vazia. Texto: %s", text[:200])
+        return PageRecordBlocks(record_texts=[], reasoning=f"Fallback falhou. Texto bruto: {text[:300]}")
+
+    # ------------------------------------------------------------------
+
     def detect_boundaries(
         self,
         lines: list[Line],
@@ -124,7 +204,11 @@ class A3RecordSegmentationAgent:
         if not lines:
             return RecordBoundaries(record_start_indices=[], reasoning="Lista de linhas vazia.")
         prompt = self._build_prompt(lines, collection_config, avg_lines_hint)
-        return self._chain.invoke([HumanMessage(content=prompt)])
+        try:
+            return self._chain.invoke([HumanMessage(content=prompt)])
+        except Exception as e:
+            logger.warning("A3 structured output falhou (%s: %s) — ativando fallback", type(e).__name__, str(e)[:120])
+            return self._fallback_boundaries(prompt, len(lines))
 
     def segment(self, lines: list[Line], collection_config: CollectionConfig, page_filename: str = "") -> list[Record]:
         """
@@ -206,7 +290,11 @@ class A3RecordSegmentationAgent:
         if not page_text.strip():
             return PageRecordBlocks(record_texts=[], reasoning="Texto vazio.")
         prompt = self._build_page_prompt(page_text, collection_config, avg_lines_hint)
-        return self._page_chain.invoke([HumanMessage(content=prompt)])
+        try:
+            return self._page_chain.invoke([HumanMessage(content=prompt)])
+        except Exception as e:
+            logger.warning("A3 page structured output falhou (%s: %s) — ativando fallback", type(e).__name__, str(e)[:120])
+            return self._fallback_page_blocks(prompt)
 
     def segment_page(
         self,

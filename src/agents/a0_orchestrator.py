@@ -585,8 +585,8 @@ class A0Orchestrator:
             # Uma chamada por página — Claude determina o número de linhas
             page_lines = self._a2.transcribe_page(page)
             logger.info(
-                "A0: [A2] Claude transcreveu %d linhas (A1 havia detectado %d válidas) (%.1fs)",
-                len(page_lines), n_valid, time.time() - t_a2,
+                "A0: [A2] %s transcreveu %d linhas (A1 havia detectado %d válidas) (%.1fs)",
+                self._config.a2_model, len(page_lines), n_valid, time.time() - t_a2,
             )
             full_text = "\n".join(page_lines)
 
@@ -623,7 +623,9 @@ class A0Orchestrator:
             min_chars = self._config.a3_min_htr_chars
             a3_lines = [
                 l for l in valid_lines
-                if l.htr_text and len(l.htr_text.strip()) >= min_chars
+                if l.htr_text
+                and len(l.htr_text.strip()) >= min_chars
+                and l.htr_text.strip() != "[ILEGÍVEL]"
             ]
             n_filtered = len(valid_lines) - len(a3_lines)
             if n_filtered:
