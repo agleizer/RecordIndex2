@@ -597,10 +597,10 @@ Serviço separado na porta 8001. Compara o output do pipeline com o CSV arquiví
   },
   "extraction": {
     "_coverage": 0.758,
-    "nome": {"tp": 88, "fp": 5, "fn": 4, "precision": 0.946, "recall": 0.957, "f1": 0.951, "exact_match_rate": 0.72},
-    "pai":  {"tp": 74, "fp": 12, "fn": 11, "precision": 0.860, "recall": 0.871, "f1": 0.865, "exact_match_rate": 0.41},
-    "mae":  {"tp": 71, "fp": 15, "fn": 11, "precision": 0.826, "recall": 0.866, "f1": 0.845, "exact_match_rate": 0.39},
-    "data": {"tp": 82, "fp": 9, "fn": 6, "precision": 0.901, "recall": 0.932, "f1": 0.916, "exact_match_rate": 0.28}
+    "nome": {"tp": 88, "fp": 5, "fn": 4, "precision": 0.946, "recall": 0.957, "f1": 0.951, "exact_match_rate": 0.72, "effective_recall": 0.726, "effective_f1": 0.821},
+    "pai":  {"tp": 74, "fp": 12, "fn": 11, "precision": 0.860, "recall": 0.871, "f1": 0.865, "exact_match_rate": 0.41, "effective_recall": 0.660, "effective_f1": 0.746},
+    "mae":  {"tp": 71, "fp": 15, "fn": 11, "precision": 0.826, "recall": 0.866, "f1": 0.845, "exact_match_rate": 0.39, "effective_recall": 0.656, "effective_f1": 0.733},
+    "data": {"tp": 82, "fp": 9, "fn": 6, "precision": 0.901, "recall": 0.932, "f1": 0.916, "exact_match_rate": 0.28, "effective_recall": 0.707, "effective_f1": 0.793}
   },
   "record_comparisons": [...],
   "unmatched_output_ids": [3, 17, 42]
@@ -811,10 +811,10 @@ PT/ABM/PMCH04/001/00025/000001; Registo de batismo n.º 1: Maria. Pai: Romano de
   },
   "extraction": {
     "_coverage": 0.857,
-    "nome": {"tp": 10, "fp": 1, "fn": 1, "precision": 0.91, "recall": 0.91, "f1": 0.91, "exact_match_rate": 0.7},
-    "pai":  {"..."},
-    "mae":  {"..."},
-    "data": {"..."}
+    "nome": {"tp": 10, "fp": 1, "fn": 1, "precision": 0.91, "recall": 0.91, "f1": 0.91, "exact_match_rate": 0.7, "effective_recall": 0.78, "effective_f1": 0.84},
+    "pai":  {"...", "effective_recall": "...", "effective_f1": "..."},
+    "mae":  {"...", "effective_recall": "...", "effective_f1": "..."},
+    "data": {"...", "effective_recall": "...", "effective_f1": "..."}
   },
   "record_comparisons": [
     {
@@ -836,13 +836,27 @@ PT/ABM/PMCH04/001/00025/000001; Registo de batismo n.º 1: Maria. Pai: Romano de
 
 ### Métricas em duas camadas
 
-**Camada 1 — Segmentação (mede A3):** calculada sobre `total_gt` vs `total_output`, independente de extração. `recall_seg` baixo quando processamos apenas parte das páginas da coleção — normal.
+**Camada 1 — Segmentação (mede A3):** calculada sobre `total_gt` vs `total_output`, independente de extração. `recall` baixo quando processamos apenas parte das páginas da coleção — normal. `segmentation_ratio` = `total_output / total_gt` (1.0 = ideal; >1 = hipersegmentação; <1 = fusão).
 
-**Camada 2 — Extração (mede A5):** calculada **apenas** sobre pares alinhados (match_score_nome ≥ 0.82). `_coverage` = fração do GT com alinhamento confiável. Registros não-alinhados não entram no F1 de extração — a taxa de não-alinhamento é informação em si.
+**Camada 2 — Extração (mede A5):** calculada **apenas** sobre pares alinhados. `_coverage` = fração do GT com alinhamento confiável. Para cada campo são reportadas duas visões:
 
-**Alinhamento:** best-match por `nome` com Jaro-Winkler. Não é posicional — funciona mesmo quando A3 fragmenta ou mescla registros. Normaliza acentos e capitalização antes de comparar.
+| Métrica | O que mede | Denominador |
+|---|---|---|
+| `precision` | Dos valores extraídos nos registros casados, quantos estão corretos | tp + fp |
+| `recall` | Dos campos presentes nos registros casados, quantos foram extraídos | tp + fn |
+| `f1` | Harmônica de precision e recall (condicional à cobertura) | — |
+| `effective_recall` | Dos campos presentes em **todos** os GT, quantos foram extraídos | tp + fn + unmatched_gt |
+| `effective_f1` | Harmônica de precision e effective_recall (visão end-to-end) | — |
+
+> **Por que duas visões?** `f1` isola a qualidade de A5 (dado que A3 encontrou o registro, A5 extraiu corretamente?). `effective_f1` combina A3 + A5 numa única métrica de sistema. Para reportar o desempenho geral do pipeline, usar `effective_f1`. Para diagnosticar onde está o gargalo, comparar `f1` com `_coverage`.
+
+> **`effective_precision` = `precision`** — registros GT não-casados não afetam o que foi extraído nos registros casados. Os FP existentes não mudam. Não há campo separado para evitar redundância.
+
+**Alinhamento:** score composto ponderado nome (0.40) + pai (0.35) + mãe (0.25), com Jaro-Winkler e normalização de acentos. Pré-filtro: nome JW ≥ 0.65. Threshold final: 0.80.
 
 **Data:** comparação por mês (extrai mês do texto português extraído vs. mês do ISO GT). `exact_match_rate` reporta casos onde A5 extraiu data em formato ISO diretamente.
+
+**Semântica de FP/FN (não-padrão vs NER clássico):** FP = campo presente no output mas incorreto (JW < 0.85). FN = campo ausente no output. GT sempre tem todos os campos preenchidos, portanto FN real = extração vazia.
 
 Documentação do protocolo completo: `02_desenvolvimento/2026_03_23_protocolo_avaliacao/protocolo_avaliacao.md`
 

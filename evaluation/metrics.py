@@ -156,10 +156,28 @@ def extraction_metrics(alignments: list[dict], fields: list[str]) -> dict:
     Métricas de Camada 2 (extração), calculadas apenas sobre pares alinhados.
 
     Para cada campo, trata `fuzzy` como TP.
-    Registros não-alinhados NÃO entram no cálculo — reportados à parte
-    como `coverage` (fração de GTs com alinhamento confiável).
+    Registros não-alinhados NÃO entram no cálculo de precision/recall/f1 padrão —
+    reportados à parte como `_coverage` (fração de GTs com alinhamento confiável).
+
+    Métricas efetivas (effective_*):
+      Incorporam os registros GT não-casados como FN adicionais, dando uma visão
+      end-to-end do sistema (segmentação + extração combinadas).
+
+      effective_recall  = tp / (tp + fn + unmatched_gt)
+                        = recall × coverage
+                        Pergunta: "de todos os valores de campo que existem no GT,
+                        quantos o sistema produziu corretamente?"
+
+      effective_precision = igual à precision padrão (sem alteração).
+                        Registros GT não-casados não afetam o que foi extraído nos
+                        registros casados — os FP existentes não mudam.
+
+      effective_f1    = 2 × precision × effective_recall / (precision + effective_recall)
+                        NÃO é f1 × coverage — essa é uma aproximação; o cálculo correto
+                        usa effective_recall com precision inalterada.
     """
     matched = [a for a in alignments if a["matched"]]
+    unmatched_gt = len(alignments) - len(matched)
     coverage = round(len(matched) / len(alignments), 4) if alignments else 0.0
 
     results: dict[str, dict] = {"_coverage": coverage}
@@ -191,6 +209,18 @@ def extraction_metrics(alignments: list[dict], fields: list[str]) -> dict:
         )
         exact_rate = round(exact_count / len(matched), 4) if matched else 0.0
 
+        # Métricas efetivas — incorporam registros GT não-casados como FN
+        eff_recall = (
+            round(tp / (tp + fn + unmatched_gt), 4)
+            if (tp + fn + unmatched_gt) > 0
+            else 0.0
+        )
+        eff_f1 = (
+            round(2 * precision * eff_recall / (precision + eff_recall), 4)
+            if (precision + eff_recall) > 0
+            else 0.0
+        )
+
         results[field] = {
             "tp": tp,
             "fp": fp,
@@ -199,6 +229,8 @@ def extraction_metrics(alignments: list[dict], fields: list[str]) -> dict:
             "recall": recall,
             "f1": f1,
             "exact_match_rate": exact_rate,
+            "effective_recall": eff_recall,
+            "effective_f1": eff_f1,
         }
 
     return results
