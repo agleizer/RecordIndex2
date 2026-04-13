@@ -5,6 +5,8 @@ Sistema multi-agente para transcrição automática e indexação de manuscritos
 Projeto TCC — Universidade Presbiteriana Mackenzie.
 Continuação acadêmica do RecordIndex v1.0 (Iniciação Científica).
 
+**TCC 1 — prazos:** relatório + pôster: 06–11/05/2026 · Mostra de TCC I: 10/06/2026
+
 ---
 
 ## Visão geral
@@ -585,20 +587,20 @@ Serviço separado na porta 8001. Compara o output do pipeline com o CSV arquiví
   "segmentation": {
     "total_gt": 128,
     "total_output": 112,
-    "n_matched": 97,
-    "precision_seg": 0.866,
-    "recall_seg": 0.758,
-    "f1_seg": 0.808,
-    "over_segmentation_rate": 0.875
+    "matched": 97,
+    "unmatched_gt": 31,
+    "unmatched_output": 15,
+    "precision": 0.866,
+    "recall": 0.758,
+    "f1": 0.808,
+    "segmentation_ratio": 0.875
   },
   "extraction": {
-    "coverage": 0.758,
-    "fields": {
-      "nome": {"precision": 0.91, "recall": 0.89, "f1": 0.90, "exact_match_rate": 0.72},
-      "pai":  {"precision": 0.78, "recall": 0.76, "f1": 0.77, "exact_match_rate": 0.41},
-      "mae":  {"precision": 0.76, "recall": 0.74, "f1": 0.75, "exact_match_rate": 0.39},
-      "data": {"precision": 0.85, "recall": 0.83, "f1": 0.84, "exact_match_rate": 0.28}
-    }
+    "_coverage": 0.758,
+    "nome": {"tp": 88, "fp": 5, "fn": 4, "precision": 0.946, "recall": 0.957, "f1": 0.951, "exact_match_rate": 0.72},
+    "pai":  {"tp": 74, "fp": 12, "fn": 11, "precision": 0.860, "recall": 0.871, "f1": 0.865, "exact_match_rate": 0.41},
+    "mae":  {"tp": 71, "fp": 15, "fn": 11, "precision": 0.826, "recall": 0.866, "f1": 0.845, "exact_match_rate": 0.39},
+    "data": {"tp": 82, "fp": 9, "fn": 6, "precision": 0.901, "recall": 0.932, "f1": 0.916, "exact_match_rate": 0.28}
   },
   "record_comparisons": [...],
   "unmatched_output_ids": [3, 17, 42]
@@ -805,7 +807,7 @@ PT/ABM/PMCH04/001/00025/000001; Registo de batismo n.º 1: Maria. Pai: Romano de
     "precision": 0.857,
     "recall": 0.094,
     "f1": 0.170,
-    "over_segmentation_rate": 0.109
+    "segmentation_ratio": 0.109
   },
   "extraction": {
     "_coverage": 0.857,

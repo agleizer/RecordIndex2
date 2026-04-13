@@ -123,9 +123,10 @@ def segmentation_metrics(total_gt: int, total_output: int, n_matched: int) -> di
     """
     Métricas de Camada 1 (segmentação).
 
-    precision_seg: fração dos outputs que correspondem a um GT real
-    recall_seg:    fração dos GTs encontrados no output
-    over_seg_rate: ratio output/GT (1.0 = ideal; >1 = hiperseg; <1 = fusão)
+    precision:          fração dos outputs que correspondem a um GT real
+    recall:             fração dos GTs encontrados no output
+    segmentation_ratio: ratio output/GT (1.0 = ideal; >1 = hiperseg; <1 = fusão)
+                        NÃO é "taxa de sobre-segmentação" — é uma razão de contagem.
     """
     precision = round(n_matched / total_output, 4) if total_output > 0 else 0.0
     recall = round(n_matched / total_gt, 4) if total_gt > 0 else 0.0
@@ -146,7 +147,7 @@ def segmentation_metrics(total_gt: int, total_output: int, n_matched: int) -> di
         "precision": precision,
         "recall": recall,
         "f1": f1,
-        "over_segmentation_rate": over_seg,
+        "segmentation_ratio": over_seg,
     }
 
 
