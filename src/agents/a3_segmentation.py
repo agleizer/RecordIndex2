@@ -33,7 +33,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
-from src.llm_client import make_structured
+from src.llm_client import disable_think, make_structured
 from src.models.collection_config import CollectionConfig
 from src.models.line import Line
 from src.models.record import Record
@@ -67,7 +67,8 @@ class PageRecordBlocks(BaseModel):
 class A3RecordSegmentationAgent:
 
     def __init__(self, model: BaseChatModel):
-        self._raw_model = model  # kept for structured-output fallback
+        self._raw_model = model  # referência original (inspeção/debug)
+        self._fallback_model = disable_think(model)  # usado nos fallbacks — thinking desabilitado
         # Modo LINE
         self._chain = make_structured(model, RecordBoundaries)
         self._prompt_template = get_prompt("a3", "segment")
@@ -127,7 +128,7 @@ class A3RecordSegmentationAgent:
             "Formato obrigatório:\n"
             '{"record_start_indices": [lista de inteiros], "reasoning": "explicação resumida"}'
         )
-        raw = self._raw_model.invoke([HumanMessage(content=retry_prompt)])
+        raw = self._fallback_model.invoke([HumanMessage(content=retry_prompt)])
         text = raw.content if hasattr(raw, "content") else str(raw)
         logger.debug("A3 fallback raw response: %s", text[:300])
 
@@ -168,7 +169,7 @@ class A3RecordSegmentationAgent:
             "Formato obrigatório:\n"
             '{"record_texts": ["texto do registro 1", "texto do registro 2", ...], "reasoning": "explicação resumida"}'
         )
-        raw = self._raw_model.invoke([HumanMessage(content=retry_prompt)])
+        raw = self._fallback_model.invoke([HumanMessage(content=retry_prompt)])
         text = raw.content if hasattr(raw, "content") else str(raw)
         logger.debug("A3 page fallback raw response: %s", text[:300])
 

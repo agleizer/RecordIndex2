@@ -25,7 +25,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from pydantic import create_model
 
-from src.llm_client import make_structured
+from src.llm_client import disable_think, make_structured
 from src.models.collection_config import CollectionConfig
 from src.models.record import Record
 from src.prompts import get_prompt
@@ -41,6 +41,7 @@ class A5NERAgent:
     def __init__(self, model: BaseChatModel):
         # Modelo base — chain construída dinamicamente por collection_type
         self._base_model = model
+        self._fallback_model = disable_think(model)  # usado no fallback — thinking desabilitado
         self._chain_cache: dict[str, object] = {}
         self._prompt_template = get_prompt("a5", "extract")
 
@@ -97,7 +98,7 @@ class A5NERAgent:
             "IMPORTANTE: Responda APENAS com JSON válido, sem texto antes ou depois. "
             f"Formato obrigatório (todos os campos são strings):\n{json.dumps(empty_example, ensure_ascii=False)}"
         )
-        raw = self._base_model.invoke([HumanMessage(content=retry_prompt)])
+        raw = self._fallback_model.invoke([HumanMessage(content=retry_prompt)])
         text = raw.content if hasattr(raw, "content") else str(raw)
         logger.debug("A5 fallback raw response: %s", text[:400])
 
