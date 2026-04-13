@@ -89,5 +89,7 @@ def make_structured(model: BaseChatModel, schema: type):
     except ImportError:
         pass
 
-    # providers não-Ollama: with_structured_output funciona normalmente
-    return disable_think(model).with_structured_output(schema, method="json_schema")
+    # providers não-Ollama (Anthropic, OpenAI): usar tool_use padrão — não especificar
+    # method="json_schema" (específico do Ollama). Com tool_use, Claude retorna structured
+    # output via function calling nativo — zero fallbacks esperados.
+    return disable_think(model).with_structured_output(schema)
