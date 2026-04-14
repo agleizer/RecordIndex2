@@ -1328,6 +1328,57 @@ Aplicado em `a4_correction.py` e `a6_validation.py`. Prompts do A4 atualizados p
 
 ---
 
+### DT-19 — `make_structured()` passava `method="json_schema"` para Anthropic
+
+**Descoberto em:** 13/04/2026 — testes 4/1b e 4/2 com Claude Sonnet em todos os agentes.
+
+**Problema:** `make_structured()` em `llm_client.py` passava `method="json_schema"` para todos os providers, incluindo Anthropic. Claude ignora o schema e responde em prosa/markdown quando recebe esse parâmetro, causando `OutputParserException` em 100% das chamadas de A3/A5/A6.
+
+**Solução:** remover `method` para providers não-Ollama. Para Anthropic e OpenAI, `with_structured_output()` sem `method` usa function calling nativo (tool_use), que funciona corretamente.
+
+**Status:** corrigido.
+
+---
+
+### DT-20 — qwen3.5 A3/A5 structured output falha sistematicamente (100%)
+
+**Descoberto em:** 14/04/2026 — experimento com 132 registros (108 páginas).
+
+**Problema:** qwen3.5 retorna raciocínio em prosa ou markdown antes do JSON, causando `OutputParserException` no parser LangChain em 100% das chamadas de A3 e A5. O fallback regex ativa e recupera os dados corretamente em 100% dos casos — sem perda de dados.
+
+Exemplos do log:
+```
+Invalid json output: Com base na análise semântica das linhas...
+Invalid json output: ### Análise dos Dados e Raciocínio
+```
+
+**Impacto:** leve subfusão de registros (segmentation_ratio=0.9015 vs ideal 1.0) em páginas com 2 registros, onde o regex de fallback é menos confiável. Tempo de execução ~200–400s mais alto por retries.
+
+**O que foi tentado (14/04/2026):**
+
+1. `update["format"] = schema.model_json_schema()` no `model_copy` antes de `with_structured_output` — não funcionou. `with_structured_output(method="json_schema")` chama `self.bind(format=schema_dict)` internamente, que sobrescreve o valor bakeado via kwargs no invoke.
+
+2. `update["format"] = "json"` no `model_copy` — mesmo resultado. O bind interno de `with_structured_output` continua enviando `format=schema_dict` ao Ollama, que qwen3.5 ignora.
+
+**Causa raiz:** `with_structured_output(method="json_schema")` sempre envia o schema completo como `format` ao Ollama via `bind()`. Para qwen3.5 nesta versão do Ollama, o constrained decoding por schema não está sendo aplicado — o modelo produz markdown/prosa livremente.
+
+**Fix correto (não implementado):** substituir `with_structured_output` no path Ollama de `make_structured()` por uma chain manual que usa `format="json"` bakeado via `model_copy` (sem `with_structured_output`), assim o format não é sobrescrito pelo bind interno:
+
+```python
+# Em make_structured(), path Ollama — substituir:
+#   return configured.with_structured_output(schema, method="json_schema")
+# Por:
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.runnables import RunnableLambda
+parser = PydanticOutputParser(pydantic_object=schema)
+return configured | RunnableLambda(lambda msg: msg.content) | parser
+# (requer que os agentes incluam format instructions no prompt manualmente)
+```
+
+**Status:** aberto. Fix requer refatoração não trivial de `make_structured()` e verificação dos agentes. Resultados do experimento com 132 registros são válidos e apresentáveis — fallback opera corretamente. Não corrigir antes da entrega do TCC 1. Candidato para TCC 2.
+
+---
+
 ## Contexto acadêmico
 
 **RecordIndex v1.0** (IC/IT): pipeline Transkribus → PyLaia HTR → doc-UFCN segmentação → similaridade cosseno para agrupamento → Ollama para correção → export.
