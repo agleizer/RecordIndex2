@@ -1379,6 +1379,99 @@ return configured | RunnableLambda(lambda msg: msg.content) | parser
 
 ---
 
+### DT-21 — `evaluation/matcher.py`: alinhamento ignora posição do registro
+
+**Descoberto em:** 22/04/2026 — durante explicação do módulo de avaliação.
+
+**Natureza:** mais limitação metodológica do que bug. Não afeta os resultados apresentados, mas vale discutir.
+
+**Problema:** `align()` em `evaluation/matcher.py:98` faz matching greedy global por conteúdo (score composto nome+pai+mãe). Para cada GT, varre **todos** os outputs e pega o de maior score acima do threshold, sem qualquer restrição de posição ou janela. Em tese, o GT #1 pode casar com o output #130 se os campos baterem.
+
+**Por que em geral não é problema na prática:**
+
+- Score composto exige que nome, pai e mãe concordem — combinações raramente são quase-únicas dentro de uma paróquia/ano.
+- Pré-filtro no nome (JW ≥ 0.65) descarta pares com nome muito divergente antes do cálculo.
+- `used.add(best_idx)` garante que cada output é consumido uma vez — colisões são serializadas pela ordem do GT.
+- Threshold final de 0.80 no score composto.
+
+**Onde pode falhar:**
+
+- **Irmãos batizados próximos**: dois GTs compartilham pai+mãe (p. ex. Maria e João, filhos de Pedro e Ana). Se A5 errar o nome de um (extraiu "Joana"), o rescue em pai+mãe (SECONDARY_RESCUE_MIN=0.85) aprova — e o output do João pode casar com o GT da Maria ou vice-versa. O greedy força o primeiro GT a pegar o "melhor" e o segundo a aceitar o resto, mas a atribuição pode inverter silenciosamente.
+- **Coleções com muitas famílias grandes ou nomes muito repetidos**: quanto mais a suposição de quase-unicidade do trio nome+pai+mãe se degrada, mais vulnerável o alinhamento fica.
+
+**Por que foi deixado assim:** introduzir restrição posicional reintroduz a fragilidade do alinhamento posicional puro que a estratégia atual foi projetada para evitar (hipersegmentação do A3 quebrava o alinhamento 1-a-1). A suposição de quase-unicidade é razoável para os corpora de teste do TCC 1 (batismo paroquial, 1 ano).
+
+**Fix possível (TCC 2):** adicionar penalidade proporcional a `|pos_gt_normalizada − pos_output_normalizada|` no `_composite_score`, ponderada de forma que nunca ultrapasse o peso do campo primário — um tie-breaker, não um filtro duro. Exigiria normalizar posições por contagem total (GT e output têm tamanhos diferentes por causa do A3) e calibrar o peso empiricamente.
+
+**Status:** aberto. Documentar como limitação metodológica no texto do TCC 1 (seção de Avaliação/Metodologia) e deixar a investigação do tie-breaker posicional para TCC 2.
+
+---
+
+### DT-22 — Exportação XLSX e recuperação de estado da aplicação
+
+**Descoberto em:** 22/04/2026 — cruzamento entre `RecordIndex2.tex` e README.
+
+**Problema:** o relatório (seção 3.6, linha 481 do `.tex`) menciona XLSX e recuperação de estado como "planejados para o TCC 2", mas não havia registro no README. `src/output_writer.py` suporta hoje apenas JSON, CSV e TXT; não há mecanismo de checkpoint.
+
+**Impacto (XLSX):** CSV preserva os dados mas perde formatação (mesclagem de células, cores por verdict A6, aba por página). Usuários arquivistas/genealogistas trabalham predominantemente em Excel — exportar em XLSX direto elimina um passo manual de importação.
+
+**Impacto (recuperação de estado):** quando o pipeline quebra no meio de uma coleção longa (timeout de API, queda do Ollama, erro inesperado), hoje é necessário reiniciar do zero. Em 108 páginas a 87s/página (experimento principal), isso significa perder ~2,5h de processamento e re-gastar chamadas pagas do Claude Sonnet. Um checkpoint por página (ou por registro finalizado) permitiria retomar onde parou.
+
+**Sugestões de implementação:**
+
+- **XLSX:** adicionar formato `"xlsx"` em `output_writer.write_outputs()` usando `openpyxl`. Estrutura: uma aba por página com linhas + transcrições + record_id, uma aba consolidada com structured_output de todos os registros, formatação condicional por `validation.verdict`.
+- **Recuperação de estado:** serializar `Collection` incrementalmente a cada `_finalize_record()` em A0 (ex: `volumes/output/checkpoints/{colecao}_{timestamp}.json`). `run_pipeline()` aceita parâmetro `resume_from` que carrega o checkpoint e continua a partir da próxima página. Requer determinismo na ordenação de páginas (já existe) e que os agentes a partir da página N sejam idempotentes (já são).
+
+**Status:** aberto. Candidato para TCC 2. Recuperação de estado é pré-requisito natural para a aplicação web (item a do Trabalho Futuro) — usuário não pode perder processamento pago por falha transiente.
+
+---
+
+### DT-23 — Validação empírica em novas coleções (casamento, óbito)
+
+**Descoberto em:** 22/04/2026 — cruzamento entre relatório e README.
+
+**Problema:** o pipeline foi exercitado e avaliado apenas em uma coleção de batismo (PortoDaCruz_Batismos_1863, 132 registros). Os outros dois tipos arquiteturalmente suportados — casamento e óbito — têm `CollectionConfig.casamento()` e `.obito()` definidos, `field_descriptions` correspondentes em `prompts.yaml`, e pesos de matching específicos em `evaluation/matcher.py` (`_MATCH_WEIGHTS` por `collection_type`), mas nunca rodaram ponta-a-ponta sobre um corpus real.
+
+**Risco:** suporte arquitetural não equivale a desempenho validado. Os seguintes pontos podem não se sustentar fora de batismo:
+
+- **Óbito:** marcadores de data menos regulares ("Aos X dias faleceu", mas também fórmulas como "No dia X, às Y horas"). O `record_start_hint` pode exigir calibração.
+- **Casamento:** estrutura com duas pessoas (noivo, noiva) e pais de ambos. O A5 pode confundir a atribuição pai-noivo vs. pai-noiva dependendo da ordem no texto. O prompt atual tem âncoras, mas não foram testadas empiricamente.
+- **A3 `avg_lines_hint`:** média de linhas por registro é diferente (óbitos tendem a ser mais curtos que batismos; casamentos mais longos). A detecção de outliers em `_resegment_outliers()` pode disparar indevidamente.
+- **Evaluation matcher:** pesos `noivo 0.45 + noiva 0.35 + pai_noivo 0.20` foram definidos por analogia ao batismo, sem validação empírica.
+
+**Requisitos mínimos para validação:**
+
+1. Um CSV de ground truth com pelo menos 30 registros de cada tipo.
+2. Um experimento E2E por tipo, com a mesma configuração de modelos do experimento principal (Claude Sonnet A2 + qwen3.5:9b A3/A4/A5 + llama3.2 A0/A6).
+3. Métricas reportadas separadas por tipo: seg F1, ratio, coverage, effective_F1 por campo.
+
+**Status:** aberto. Candidato para TCC 2. Compõe o escopo de "coleções adicionais" do item (d) do Trabalho Futuro.
+
+---
+
+### DT-24 — A5 campo mãe: gargalo de qualidade (effective_F1 = 0,588)
+
+**Descoberto em:** 14/04/2026 — experimento principal. Registrado como limitação no relatório (seção 4.7, linha 627 do `.tex`) sem DT associado.
+
+**Problema:** no experimento com 132 registros, o campo mãe atingiu `effective_F1 = 0,588`, contra `nome = 0,772` e `pai = 0,700`. É o campo com pior desempenho do A5 e constitui gargalo de qualidade do sistema na extração de entidades.
+
+**Causas prováveis:**
+
+- **Âncora textual mais frágil:** no batismo católico, o nome da mãe aparece tipicamente após "filho/a legítimo/a de X e de Y, sua mulher". A âncora "sua mulher" (ou equivalente) é menos consistente que a âncora do pai (que aparece primeiro e é inequívoca). `field_descriptions` em `prompts.yaml` já contém âncoras para ambos os campos, mas a de mãe parece insuficiente.
+- **Viés de co-ocorrência:** em textos onde a mãe não é nomeada explicitamente ou o HTR deteriorou a região, o A5 pode completar o campo mãe com sobrenome do pai ou inventar um nome plausível. Observação qualitativa — não quantificada.
+- **Propagação de erro A3:** registros fragmentados (hipersegmentação residual do A3) frequentemente perdem a seção de filiação, deixando o A5 sem input para o campo mãe.
+
+**Sugestões de mitigação:**
+
+1. **Refinar `field_descriptions` da mãe:** adicionar mais padrões âncora observados no corpus ("filho legítimo de X e de Y, sua mulher"; "natural desta freguesia, filho de X com Y"; "de pais X e Y"). Revisar e testar diferentes âncoras sem aumentar ambiguidade.
+2. **Few-shot examples no prompt do A5:** incluir 2–3 exemplos concretos de extração correta do campo mãe (texto → JSON), especialmente para variações de fraseologia. Custo: tokens adicionais por chamada.
+3. **Validação cruzada com o pai:** penalidade em A6 se mãe tem sobrenome idêntico ao pai (padrão suspeito de alucinação por completion). Já existe check `pai == mae`, mas não "sobrenome igual".
+4. **Modelo mais capaz para A5:** testar Claude Haiku ou Sonnet em A5 (custo moderado — apenas 1 chamada por registro). Ganho esperado superior ao custo, dado o gargalo identificado.
+
+**Status:** aberto. Candidato para TCC 2. Item (1) é experimental e baixo custo — pode ser tentado antes da entrega do TCC 1 se houver tempo, mas não bloqueia a entrega. Itens (3) e (4) são TCC 2.
+
+---
+
 ## Contexto acadêmico
 
 **RecordIndex v1.0** (IC/IT): pipeline Transkribus → PyLaia HTR → doc-UFCN segmentação → similaridade cosseno para agrupamento → Ollama para correção → export.
