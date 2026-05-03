@@ -164,17 +164,25 @@ def extraction_metrics(alignments: list[dict], fields: list[str]) -> dict:
       end-to-end do sistema (segmentação + extração combinadas).
 
       effective_recall  = tp / (tp + fn + unmatched_gt)
-                        = recall × coverage
                         Pergunta: "de todos os valores de campo que existem no GT,
                         quantos o sistema produziu corretamente?"
-
-      effective_precision = igual à precision padrão (sem alteração).
-                        Registros GT não-casados não afetam o que foi extraído nos
-                        registros casados — os FP existentes não mudam.
 
       effective_f1    = 2 × precision × effective_recall / (precision + effective_recall)
                         NÃO é f1 × coverage — essa é uma aproximação; o cálculo correto
                         usa effective_recall com precision inalterada.
+
+    Slot accuracy (métricas principais para reporte):
+      slot_accuracy           = tp / casados
+                                "de quantos registros casados, quantos tiveram este campo correto?"
+      effective_slot_accuracy = tp / total_gt
+                                "de todos os registros do GT, quantos tiveram este campo correto?"
+      Não tem ambiguidade semântica de P/R — adequado para campos de cardinalidade 1.
+
+    Métricas strict (semântica NER clássica):
+      Tratam valor incorreto presente como FP *e* FN simultaneamente.
+      fn_strict             = fn + fp
+      strict_effective_f1   = calculado com fn_strict e unmatched_gt
+      Usadas para comparação com literatura de NER/IE.
     """
     matched = [a for a in alignments if a["matched"]]
     unmatched_gt = len(alignments) - len(matched)
@@ -221,6 +229,24 @@ def extraction_metrics(alignments: list[dict], fields: list[str]) -> dict:
             else 0.0
         )
 
+        # Slot accuracy — métrica principal para reporte (sem ambiguidade P/R)
+        slot_accuracy = round(tp / len(matched), 4) if matched else 0.0
+        effective_slot_accuracy = round(tp / len(alignments), 4) if alignments else 0.0
+
+        # Strict NER — valor incorreto presente conta como FP e FN
+        fn_strict = fn + fp
+        strict_recall = round(tp / (tp + fn_strict), 4) if (tp + fn_strict) > 0 else 0.0
+        strict_eff_recall = (
+            round(tp / (tp + fn_strict + unmatched_gt), 4)
+            if (tp + fn_strict + unmatched_gt) > 0
+            else 0.0
+        )
+        strict_eff_f1 = (
+            round(2 * precision * strict_eff_recall / (precision + strict_eff_recall), 4)
+            if (precision + strict_eff_recall) > 0
+            else 0.0
+        )
+
         results[field] = {
             "tp": tp,
             "fp": fp,
@@ -231,6 +257,12 @@ def extraction_metrics(alignments: list[dict], fields: list[str]) -> dict:
             "exact_match_rate": exact_rate,
             "effective_recall": eff_recall,
             "effective_f1": eff_f1,
+            "slot_accuracy": slot_accuracy,
+            "effective_slot_accuracy": effective_slot_accuracy,
+            "fn_strict": fn_strict,
+            "strict_recall": strict_recall,
+            "strict_effective_recall": strict_eff_recall,
+            "strict_effective_f1": strict_eff_f1,
         }
 
     return results

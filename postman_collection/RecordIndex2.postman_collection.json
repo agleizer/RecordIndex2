@@ -1,0 +1,793 @@
+{
+  "info": {
+    "_postman_id": "17f91c0f-c171-41b4-8e72-bf8b129253d1",
+    "name": "RecordIndex2",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "49726094",
+    "_collection_link": "https://go.postman.co/collection/49726094-17f91c0f-c171-41b4-8e72-bf8b129253d1?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "RI Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8000/health",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8000",
+          "path": [
+            "health"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "A1 Segment",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "uuid": "de89d161-f0f6-4db3-ad00-3c7422b26e0b",
+              "src": "/C:/Users/Alan Gleizer/Documents/GitHubRepos/RecordIndex2/volumes/samples/PortoDaCruz_Batismos_1866_4752_auto_save_downloaded_image_0010.jpg"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:8000/a1/segment",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8000",
+          "path": [
+            "a1",
+            "segment"
+          ]
+        }
+      },
+      "response": [
+        {
+          "name": "A1 Segment",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "uuid": "de89d161-f0f6-4db3-ad00-3c7422b26e0b",
+                  "src": "/C:/Users/Alan Gleizer/Documents/GitHubRepos/RecordIndex2/volumes/samples/PortoDaCruz_Batismos_1866_4752_auto_save_downloaded_image_0010.jpg"
+                }
+              ]
+            },
+            "url": {
+              "raw": "http://localhost:8000/a1/segment",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "a1",
+                "segment"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": null,
+          "header": [
+            {
+              "key": "date",
+              "value": "Thu, 09 Apr 2026 22:33:13 GMT"
+            },
+            {
+              "key": "server",
+              "value": "uvicorn"
+            },
+            {
+              "key": "content-length",
+              "value": "2455"
+            },
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n    \"filename\": \"PortoDaCruz_Batismos_1866_4752_auto_save_downloaded_image_0010.jpg\",\n    \"num_lines\": 40,\n    \"lines\": [\n        {\n            \"id\": \"tmpk8vdyvft_line_0001\",\n            \"bbox\": [\n                332,\n                110,\n                1578,\n                210\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0002\",\n            \"bbox\": [\n                329,\n                215,\n                1566,\n                261\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0003\",\n            \"bbox\": [\n                347,\n                269,\n                1563,\n                311\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0004\",\n            \"bbox\": [\n                353,\n                319,\n                1563,\n                371\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0005\",\n            \"bbox\": [\n                356,\n                373,\n                1557,\n                425\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0006\",\n            \"bbox\": [\n                362,\n                430,\n                1563,\n                476\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0007\",\n            \"bbox\": [\n                359,\n                478,\n                1560,\n                524\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0008\",\n            \"bbox\": [\n                365,\n                532,\n                1557,\n                577\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0009\",\n            \"bbox\": [\n                362,\n                582,\n                1548,\n                628\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0010\",\n            \"bbox\": [\n                365,\n                636,\n                1551,\n                682\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0011\",\n            \"bbox\": [\n                365,\n                690,\n                1539,\n                742\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0012\",\n            \"bbox\": [\n                359,\n                747,\n                1548,\n                796\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0013\",\n            \"bbox\": [\n                371,\n                816,\n                1099,\n                853\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0014\",\n            \"bbox\": [\n                424,\n                855,\n                1566,\n                924\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0015\",\n            \"bbox\": [\n                83,\n                878,\n                201,\n                909\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0016\",\n            \"bbox\": [\n                71,\n                935,\n                303,\n                966\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0017\",\n            \"bbox\": [\n                389,\n                977,\n                1524,\n                1017\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0018\",\n            \"bbox\": [\n                74,\n                986,\n                312,\n                1023\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0019\",\n            \"bbox\": [\n                368,\n                1034,\n                1554,\n                1077\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0020\",\n            \"bbox\": [\n                71,\n                1046,\n                345,\n                1080\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0021\",\n            \"bbox\": [\n                374,\n                1091,\n                1539,\n                1134\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0022\",\n            \"bbox\": [\n                71,\n                1100,\n                303,\n                1137\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0023\",\n            \"bbox\": [\n                365,\n                1142,\n                1536,\n                1190\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0024\",\n            \"bbox\": [\n                368,\n                1198,\n                1542,\n                1247\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0025\",\n            \"bbox\": [\n                365,\n                1255,\n                1533,\n                1301\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0026\",\n            \"bbox\": [\n                365,\n                1309,\n                1557,\n                1355\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0027\",\n            \"bbox\": [\n                368,\n                1363,\n                1566,\n                1412\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0028\",\n            \"bbox\": [\n                317,\n                1420,\n                1563,\n                1468\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0029\",\n            \"bbox\": [\n                371,\n                1473,\n                1566,\n                1522\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0030\",\n            \"bbox\": [\n                368,\n                1527,\n                1566,\n                1576\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0031\",\n            \"bbox\": [\n                368,\n                1584,\n                1554,\n                1633\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0032\",\n            \"bbox\": [\n                365,\n                1638,\n                1566,\n                1690\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0033\",\n            \"bbox\": [\n                368,\n                1695,\n                1554,\n                1746\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0034\",\n            \"bbox\": [\n                362,\n                1745,\n                1563,\n                1800\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0035\",\n            \"bbox\": [\n                371,\n                1802,\n                1512,\n                1857\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0036\",\n            \"bbox\": [\n                374,\n                1859,\n                1560,\n                1911\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0037\",\n            \"bbox\": [\n                371,\n                1916,\n                1566,\n                1968\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0038\",\n            \"bbox\": [\n                371,\n                1964,\n                1554,\n                2021\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0039\",\n            \"bbox\": [\n                377,\n                2020,\n                1560,\n                2075\n            ]\n        },\n        {\n            \"id\": \"tmpk8vdyvft_line_0040\",\n            \"bbox\": [\n                374,\n                2077,\n                1560,\n                2186\n            ]\n        }\n    ],\n    \"crops_dir\": \"/data/output/lines\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "A2 Transcribe",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "uuid": "8fdbb00b-4e68-4cc8-a2a3-46f0badd9cd5",
+              "src": "/C:/Users/Alan Gleizer/Documents/GitHubRepos/RecordIndex2/volumes/samples/PortoDaCruz_Batismos_1866_4752_auto_save_downloaded_image_0010.jpg"
+            },
+            {
+              "key": "htr_scope",
+              "type": "text",
+              "uuid": "28d213cb-bc4c-4c04-a75a-d27eeb1f3238",
+              "value": "page"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:8000/a2/transcribe",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8000",
+          "path": [
+            "a2",
+            "transcribe"
+          ]
+        }
+      },
+      "response": [
+        {
+          "name": "A2 Transcribe",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "uuid": "8fdbb00b-4e68-4cc8-a2a3-46f0badd9cd5",
+                  "src": "/C:/Users/Alan Gleizer/Documents/GitHubRepos/RecordIndex2/volumes/samples/teste.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "http://localhost:8000/a2/transcribe",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "a2",
+                "transcribe"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": null,
+          "header": [
+            {
+              "key": "date",
+              "value": "Sun, 29 Mar 2026 20:00:22 GMT"
+            },
+            {
+              "key": "server",
+              "value": "uvicorn"
+            },
+            {
+              "key": "content-length",
+              "value": "171"
+            },
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n    \"filename\": \"teste.png\",\n    \"htr_text\": \"Nos quatro dias do mês de Abril, de anno de mil e\",\n    \"debug_raw\": \"HTROutput(text='Nos quatro dias do mês de Abril, de anno de mil e')\"\n}"
+        },
+        {
+          "name": "A2 Transcribe",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "uuid": "8fdbb00b-4e68-4cc8-a2a3-46f0badd9cd5",
+                  "src": "/C:/Users/Alan Gleizer/Documents/GitHubRepos/RecordIndex2/volumes/samples/teste.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "http://localhost:8000/a2/transcribe",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "a2",
+                "transcribe"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": null,
+          "header": [
+            {
+              "key": "date",
+              "value": "Sun, 29 Mar 2026 21:42:27 GMT"
+            },
+            {
+              "key": "server",
+              "value": "uvicorn"
+            },
+            {
+              "key": "content-length",
+              "value": "737"
+            },
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n    \"filename\": \"teste.png\",\n    \"htr_text\": \"Nos quatro dias do mês de Abril, de anno de mil oit\",\n    \"debug_raw\": \"AIMessage(content='Nos quatro dias do mês de Abril, de anno de mil oit', additional_kwargs={}, response_metadata={'model': 'qwen3.5:9b', 'created_at': '2026-03-29T21:42:28.547245051Z', 'done': True, 'done_reason': 'stop', 'total_duration': 804472108, 'load_duration': 101691777, 'prompt_eval_count': 321, 'prompt_eval_duration': 134890567, 'eval_count': 15, 'eval_duration': 184078039, 'logprobs': None, 'model_name': 'qwen3.5:9b', 'model_provider': 'ollama'}, id='lc_run--019d3b8c-5c9a-7d93-ba87-4b3975b4797b-0', tool_calls=[], invalid_tool_calls=[], usage_metadata={'input_tokens': 321, 'output_tokens': 15, 'total_tokens': 336})\"\n}"
+        },
+        {
+          "name": "A2 Transcribe",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "uuid": "8fdbb00b-4e68-4cc8-a2a3-46f0badd9cd5",
+                  "src": "/C:/Users/Alan Gleizer/Documents/GitHubRepos/RecordIndex2/volumes/samples/PortoDaCruz_Batismos_1866_4752_auto_save_downloaded_image_0010.jpg"
+                },
+                {
+                  "key": "htr_scope",
+                  "type": "text",
+                  "uuid": "28d213cb-bc4c-4c04-a75a-d27eeb1f3238",
+                  "value": "page"
+                }
+              ]
+            },
+            "url": {
+              "raw": "http://localhost:8000/a2/transcribe",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "a2",
+                "transcribe"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": null,
+          "header": [
+            {
+              "key": "date",
+              "value": "Sat, 11 Apr 2026 03:24:32 GMT"
+            },
+            {
+              "key": "server",
+              "value": "uvicorn"
+            },
+            {
+              "key": "content-length",
+              "value": "2037"
+            },
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n    \"filename\": \"PortoDaCruz_Batismos_1866_4752_auto_save_downloaded_image_0010.jpg\",\n    \"htr_scope\": \"page\",\n    \"lines\": [\n        \"freguesia e nella recebiros, moradores no sitio\",\n        \"das Casas Proximas; nello paterno de João Melchior\",\n        \"Ribeiro e de Maria Caldeira; e materno d'Agosti\",\n        \"nho Jose d'avilan e de Maria Rosa de Jesus. Foi\",\n        \"Padrinho Antonio Justiniano Spinola, soltei\",\n        \"niros de servir; e Madrinha Francisca Rosa;\",\n        \"solteira, empregada no governo de sua casa; mo\",\n        \"radora no sitio das Casas Proximas desta mesma\",\n        \"freguesia; os quaes dei serem os proprios. E para\",\n        \"Constar lavrei em duplicado este assento que depois\",\n        \"de ser lido e conferido perante os padrinhos\",\n        \"comigo nas assignadas por não saberem es\",\n        \"crever. Era ut supra.\",\n        \"O Vigr.º Jose Augusto de Freitas\",\n        \"N.º 13.\",\n        \"Dia 8 de Fevereiro\",\n        \"Anno de 1866.\",\n        \"Francisco f.º de Ve\",\n        \"nancio Gomes.\",\n        \"Aos oito dias do mes de Fevereiro do anno de mil oito\",\n        \"centos sessenta e seis, nesta Parochial Igreja de Nossa Se\",\n        \"nhora de Guadalupe do Porto da Cruz, Concelho de Ma\",\n        \"chico, Districto Ecclesiastico e Diocese do Funchal; eu\",\n        \"o Presbyter Jose Augusto de Freitas, Vigario da mes\",\n        \"ma Igreja, baptisou solemnemente hum individuo\",\n        \"do Sexo masculino, a quem dei o Nome de Francisco\",\n        \"e que nasceu no dia vinte e um do mes de Janeiro\",\n        \"deste mesmo anno, pelas quatro oras da manhã;\",\n        \"filho legitimo de Venancio Gomes, e de sua mulher\",\n        \"Clara Augusta de Jesus, naturaes desta freguesia e nella\",\n        \"recebidos, moradores no sitio do Macaspar; exer\",\n        \"cendo elle a profissão de ferreiro; nello paterno de\",\n        \"Joaquim Jose Gomes e de Maria Emilia Gomes; e\",\n        \"Maraterno de Francisco Jose Gomes e de Joanna Eme\",\n        \"dia da Silva. Foram padrinhos Jose de Cunha Spinola;\",\n        \"digo Francisco de Cunha Spinola e sua mulher Matilda\",\n        \"de Freitas, lavradores e moradores no sitio da Respe\",\n        \"ta desta mesma freguesia; os quaes fui serem\",\n        \"os proprios. E para Constar lavrei em duplicado es\",\n        \"te assento que, depois de ser lido e conferido peran\",\n        \"te os padrinhos, comigo assignou o padrinho e nas\"\n    ],\n    \"n_returned\": 41\n}"
+        }
+      ]
+    },
+    {
+      "name": "A3 Segmentar Reg byPage",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"htr_scope\": \"page\",\r\n    \"page_text\": \"freguesia e nella recebiros, moradores no sitio\\ndas Casas Proximas; nello paterno de João Melchior\\nRibeiro e de Maria Caldeira; e materno d'Agosti\\nnho Jose d'avilan e de Maria Rosa de Jesus. Foi\\nPadrinho Antonio Justiniano Spinola, soltei\\nniros de servir; e Madrinha Francisca Rosa;\\nsolteira, empregada no governo de sua casa; mo\\nradora no sitio das Casas Proximas desta mesma\\nfreguesia; os quaes dei serem os proprios. E para\\nConstar lavrei em duplicado este assento que depois\\nde ser lido e conferido perante os padrinhos\\ncomigo nas assignadas por não saberem es\\ncrever. Era ut supra.\\nO Vigr.º Jose Augusto de Freitas\\nN.º 13.\\nDia 8 de Fevereiro\\nAnno de 1866.\\nFrancisco f.º de Ve\\nnancio Gomes.\\nAos oito dias do mes de Fevereiro do anno de mil oito\\ncentos sessenta e seis, nesta Parochial Igreja de Nossa Se\\nnhora de Guadalupe do Porto da Cruz, Concelho de Ma\\nchico, Districto Ecclesiastico e Diocese do Funchal; eu\\no Presbyter Jose Augusto de Freitas, Vigario da mes\\nma Igreja, baptisou solemnemente hum individuo\\ndo Sexo masculino, a quem dei o Nome de Francisco\\ne que nasceu no dia vinte e um do mes de Janeiro\\ndeste mesmo anno, pelas quatro oras da manhã;\\nfilho legitimo de Venancio Gomes, e de sua mulher\\nClara Augusta de Jesus, naturaes desta freguesia e nella\\nrecebidos, moradores no sitio do Macaspar; exer\\ncendo elle a profissão de ferreiro; nello paterno de\\nJoaquim Jose Gomes e de Maria Emilia Gomes; e\\nMaraterno de Francisco Jose Gomes e de Joanna Eme\\ndia da Silva. Foram padrinhos Jose de Cunha Spinola;\\ndigo Francisco de Cunha Spinola e sua mulher Matilda\\nde Freitas, lavradores e moradores no sitio da Respe\\nta desta mesma freguesia; os quaes fui serem\\nos proprios. E para Constar lavrei em duplicado es\\nte assento que, depois de ser lido e conferido peran\\nte os padrinhos, comigo assignou o padrinho e nas\",\r\n    \"collection_type\": \"batismo\"\r\n  }",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8000/a3/segment",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8000",
+          "path": [
+            "a3",
+            "segment"
+          ]
+        }
+      },
+      "response": [
+        {
+          "name": "A3 Segmentar Reg",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"lines\": [\r\n      \"Aos vinte dias do mez de janeiro de mil oitocentos\",\r\n      \"e cinquenta, na matriz de São Paulo, baptizei\",\r\n      \"a Pedro, filho legítimo de João da Silva\",\r\n      \"e de Maria Antonia. Padrinho: Francisco.\",\r\n      \"Aos cinco dias do mez de fevereiro de mil oitocentos\",\r\n      \"e cinquenta, baptizei a Ana, filha de José\",\r\n      \"e de Clara dos Santos. Madrinhas: Benedita.\"\r\n    ],\r\n    \"collection_type\": \"batismo\"\r\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:8000/a3/segment",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "a3",
+                "segment"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": null,
+          "header": [
+            {
+              "key": "date",
+              "value": "Sun, 29 Mar 2026 21:45:15 GMT"
+            },
+            {
+              "key": "server",
+              "value": "uvicorn"
+            },
+            {
+              "key": "content-length",
+              "value": "389"
+            },
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n    \"record_start_indices\": [\n        0,\n        4\n    ],\n    \"reasoning\": \"Os índices que iniciam um novo registro genealógico são os números 0 e 4, pois eles marcam o início de dois novos registros separados: um batismo de Pedro (registro 1) e outro de Ana (registro 5). Os índices 1, 2, 3 e 6 pertencem a registros genealógicos anteriores, enquanto os índices 0 e 4 introduzem novos registros.\",\n    \"num_records\": 2\n}"
+        },
+        {
+          "name": "A3 Segmentar Reg",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"htr_scope\": \"page\",\r\n    \"page_text\": \"freguesia e nella recebiros, moradores no sitio\\ndas Casas Proximas; nello paterno de João Melchior\\nRibeiro e de Maria Caldeira; e materno d'Agosti\\nnho Jose d'avilan e de Maria Rosa de Jesus. Foi\\nPadrinho Antonio Justiniano Spinola, soltei\\nniros de servir; e Madrinha Francisca Rosa;\\nsolteira, empregada no governo de sua casa; mo\\nradora no sitio das Casas Proximas desta mesma\\nfreguesia; os quaes dei serem os proprios. E para\\nConstar lavrei em duplicado este assento que depois\\nde ser lido e conferido perante os padrinhos\\ncomigo nas assignadas por não saberem es\\ncrever. Era ut supra.\\nO Vigr.º Jose Augusto de Freitas\\nN.º 13.\\nDia 8 de Fevereiro\\nAnno de 1866.\\nFrancisco f.º de Ve\\nnancio Gomes.\\nAos oito dias do mes de Fevereiro do anno de mil oito\\ncentos sessenta e seis, nesta Parochial Igreja de Nossa Se\\nnhora de Guadalupe do Porto da Cruz, Concelho de Ma\\nchico, Districto Ecclesiastico e Diocese do Funchal; eu\\no Presbyter Jose Augusto de Freitas, Vigario da mes\\nma Igreja, baptisou solemnemente hum individuo\\ndo Sexo masculino, a quem dei o Nome de Francisco\\ne que nasceu no dia vinte e um do mes de Janeiro\\ndeste mesmo anno, pelas quatro oras da manhã;\\nfilho legitimo de Venancio Gomes, e de sua mulher\\nClara Augusta de Jesus, naturaes desta freguesia e nella\\nrecebidos, moradores no sitio do Macaspar; exer\\ncendo elle a profissão de ferreiro; nello paterno de\\nJoaquim Jose Gomes e de Maria Emilia Gomes; e\\nMaraterno de Francisco Jose Gomes e de Joanna Eme\\ndia da Silva. Foram padrinhos Jose de Cunha Spinola;\\ndigo Francisco de Cunha Spinola e sua mulher Matilda\\nde Freitas, lavradores e moradores no sitio da Respe\\nta desta mesma freguesia; os quaes fui serem\\nos proprios. E para Constar lavrei em duplicado es\\nte assento que, depois de ser lido e conferido peran\\nte os padrinhos, comigo assignou o padrinho e nas\",\r\n    \"collection_type\": \"batismo\"\r\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:8000/a3/segment",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "a3",
+                "segment"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": null,
+          "header": [
+            {
+              "key": "date",
+              "value": "Sat, 11 Apr 2026 03:29:07 GMT"
+            },
+            {
+              "key": "server",
+              "value": "uvicorn"
+            },
+            {
+              "key": "content-length",
+              "value": "3105"
+            },
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n    \"htr_scope\": \"page\",\n    \"record_texts\": [\n        \"Aos\",\n        \"no primeiro dia\",\n        \"Aos\",\n        \"oitze dias do mes de Fevereiro do anno de mil oito centos sessenta e seis, nesta Parochial Igreja de Nossa Senhora de Guadalupe do Porto da Cruz, Concelho de Machico, Districto Ecclesiastico e Diocese do Funchal; eu o Presbyter Jose Augusto de Freitas, Vigario da mesma Igreja, baptisou solemnemente hum individuo do Sexo masculino, a quem dei o Nome de Francisco e que nasceu no dia vinte e um do mes de Janeiro deste mesmo anno, pelas quatro oras da manhã; filho legitimo de Venancio Gomes, e de sua mulher Clara Augusta de Jesus, naturaes desta freguesia e nella recebidos, moradores no sitio do Macaspar; exercendo elle a profissao de ferreiro; nello paterno de Joaquim Jose Gomes e de Maria Emilia Gomes; e Maraterno de Francisco Jose Gomes e de Joanna Eme dia da Silva. Foram padrinhos Jose de Cunha Spinola; digo Francisco de Cunha Spinola e sua mulher Matilda de Freitas, lavradores e moradores no sitio da Respeita desta mesma freguesia; os quaes fui serem os proprios. E para Constaur lavrei em duplicado este assento que, depois de ser lido e conferido perante os padrinhos comigo nas assignadas por não saberem es crever. Era ut supra.\"\n    ],\n    \"reasoning\": \"Para identificar as fronteiras entre registros, considerei as seguintes características:\\n\\n- O início de cada registro é marcado por uma expressão de data (ex: 'Aos', 'no primeiro dia', etc.) que introduz um novo ato eclesiástico.\\n- As variações semânticas equivalentes devem ser reconhecidas e consideradas como parte do mesmo registro.\\n- As linhas de frontispício, cabeçalho ou índice que precedem o primeiro registro devem ser ignoradas.\\n- Se a página não contiver nenhum registro, devemos retornar uma lista vazia. Em seguida, dividi as seguintes informações em registros genealógicos individuais:\\n\\nAos X dias do mes de Fevereiro do anno de mil oito centos sessenta e seis, nesta Parochial Igreja de Nossa Senhora de Guadalupe do Porto da Cruz, Concelho de Machico, Districto Ecclesiastico e Diocese do Funchal; eu o Presbyter Jose Augusto de Freitas, Vigario da mesma Igreja, baptisou solemnemente hum individuo do Sexo masculino, a quem dei o Nome de Francisco e que nasceu no dia vinte e um do mes de Janeiro deste mesmo anno, pelas quatro oras da manhã; filho legitimo de Venancio Gomes, e de sua mulher Clara Augusta de Jesus, naturaes desta freguesia e nella recebidos, moradores no sitio do Macaspar; exercendo elle a profissao de ferreiro; nello paterno de Joaquim Jose Gomes e de Maria Emilia Gomes; e Maraterno de Francisco Jose Gomes e de Joanna Eme dia da Silva. Foram padrinhos Jose de Cunha Spinola; digo Francisco de Cunha Spinola e sua mulher Matilda de Freitas, lavradores e moradores no sitio da Respeita desta mesma freguesia; os quaes fui serem os proprios. E para Constaur lavrei em duplicado este assento que, depois de ser lido e conferido perante os padrinhos comigo nas assignadas por não saberem es crever. Era ut supra.\\n\\nAos oito dias do mes de Fevereiro do anno de mil oito centos sessenta e seis,\",\n    \"num_records\": 4\n}"
+        }
+      ]
+    },
+    {
+      "name": "A3 Segmentar Reg byLine",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"lines\": [\r\n    \"Aos quatro dias do mês de abril de mil oitocentos e cincoenta,\",\r\n    \"baptizei solenemente a Maria, filha legítima de José Ferreira\",\r\n    \"e de Ana dos Santos. Padrinho: Francisco Alves. Madrina: Rosa.\",\r\n    \"Aos doze dias do mês de abril de mil oitocentos e cincoenta,\",\r\n    \"baptizei a João, filho natural de Joaquina de tal.\",\r\n    \"Nada mais constava. O vigário: Padre Manuel.\",\r\n    \"Aos vinte dias do mês de abril de mil oitocentos e cincoenta,\"\r\n  ],\r\n  \"collection_type\": \"batismo\",\r\n  \"htr_scope\": \"line\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8000/a3/segment",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8000",
+          "path": [
+            "a3",
+            "segment"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "A4 Correct",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "  {\r\n    \"record_text\": \"AAos dezesete dias do mes dAbril do anno de mil eitocentos edessenta, pelo mei dia nesta Igreja Parochial de Nosa Senhora de Quadelupe, baptisei a criança do sexo femeneno, a que dei o nome de Maria, filha lisima de Eyidio Francisco Teixeira e de sua mulher Carhota Augusta.\",\r\n    \"record_template\": \"Aos <DIA> dias do mês de <MES>, do anno de mil oitocentos e <ANO>, pelo <HORARIO>, n'esta Igreja Parochial Nossa Senhora de Guadelupe, baptisei a uma criança do sexo <SEXO> a que dei o nome de <PRIMEIRO_NOME>, filha legítima de <NOME_PAI> e de sua mulher <NOME_MAE>.\"\r\n  }",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8000/a4/correct",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8000",
+          "path": [
+            "a4",
+            "correct"
+          ]
+        }
+      },
+      "response": [
+        {
+          "name": "A4 Correct",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "  {\r\n    \"record_text\": \"AAos dezesete dias do mes dAbril do anno de mil eitocentos edessenta, pelo mei dia nesta Igreja Parochial de Nosa Senhora de Quadelupe, baptisei a criança do sexo femeneno, a que dei o nome de Maria, filha lisima de Eyidio Francisco Teixeira e de sua mulher Carhota Augusta.\",\r\n    \"record_template\": \"Aos <DIA> dias do mês de <MES>, do anno de mil oitocentos e <ANO>, pelo <HORARIO>, n'esta Igreja Parochial Nossa Senhora de Guadelupe, baptisei a uma criança do sexo <SEXO> a que dei o nome de <PRIMEIRO_NOME>, filha legítima de <NOME_PAI> e de sua mulher <NOME_MAE>.\"\r\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:8000/a4/correct",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "a4",
+                "correct"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": null,
+          "header": [
+            {
+              "key": "date",
+              "value": "Thu, 09 Apr 2026 23:11:06 GMT"
+            },
+            {
+              "key": "server",
+              "value": "uvicorn"
+            },
+            {
+              "key": "content-length",
+              "value": "306"
+            },
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n    \"corrected_text\": \"Aos dezesseite dias do mês de Abril, do ano de mil oitocentos e setenta, pelo meio dia nesta Igreja Parochial de Nossa Senhora de Quadelupe, baptisei a criança do sexo feminino, à que dei o nome de Maria, filha legítima de Eyidio Francisco Teixeira e de sua mulher Carhota Augusta.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "A5 NER",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"record_text\": \"Aos vinte dias do mez de janeiro de mil oitocentos e cinquenta, na matriz de São Paulo, baptizei a Pedro, filho legítimo de João da Silva e de Maria Antonia.\",\r\n    \"collection_type\": \"batismo\"\r\n  }",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8000/a5/extract",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8000",
+          "path": [
+            "a5",
+            "extract"
+          ]
+        }
+      },
+      "response": [
+        {
+          "name": "A5 NER",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"record_text\": \"Aos vinte dias do mez de janeiro de mil oitocentos e cinquenta, na matriz de São Paulo, baptizei a Pedro, filho legítimo de João da Silva e de Maria Antonia.\",\r\n    \"collection_type\": \"batismo\"\r\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:8000/a5/extract",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "a5",
+                "extract"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": null,
+          "header": [
+            {
+              "key": "date",
+              "value": "Sun, 29 Mar 2026 21:51:04 GMT"
+            },
+            {
+              "key": "server",
+              "value": "uvicorn"
+            },
+            {
+              "key": "content-length",
+              "value": "161"
+            },
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n    \"fields\": {\n        \"nome\": \"Pedro\",\n        \"pai\": \"João da Silva\",\n        \"mae\": \"Maria Antonia\",\n        \"data\": \"vinte dias de janeiro de mil oitocentos e cinquenta\"\n    },\n    \"collection_type\": \"batismo\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "A6 Validate",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"record_text\": \"Aos oito dias do mez de fevereiro do anno de mil oitocentos e sessenta, baptizei Maria, filha legítima de João da Silva e de sua mulher Ana de Jesus.\",\r\n    \"structured_output\": {\r\n      \"nome\": \"Maria\",\r\n      \"pai\": \"João da Silva\",\r\n      \"mae\": \"\",\r\n      \"data\": \"oito de fevereiro de mil oitocentos e sessenta\"\r\n    },\r\n    \"collection_type\": \"batismo\"\r\n  }",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8000/a6/validate",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8000",
+          "path": [
+            "a6",
+            "validate"
+          ]
+        }
+      },
+      "response": [
+        {
+          "name": "A6 Validate",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"record_text\": \"Aos oito dias do mez de fevereiro do anno de mil oitocentos e sessenta, baptizei Maria, filha legítima de João da Silva e de sua mulher Ana de Jesus.\",\r\n    \"structured_output\": {\r\n      \"nome\": \"Maria\",\r\n      \"pai\": \"João da Silva\",\r\n      \"mae\": \"\",\r\n      \"data\": \"oito de fevereiro de mil oitocentos e sessenta\"\r\n    },\r\n    \"collection_type\": \"batismo\"\r\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:8000/a6/validate",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "a6",
+                "validate"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": null,
+          "header": [
+            {
+              "key": "date",
+              "value": "Fri, 10 Apr 2026 02:15:09 GMT"
+            },
+            {
+              "key": "server",
+              "value": "uvicorn"
+            },
+            {
+              "key": "content-length",
+              "value": "355"
+            },
+            {
+              "key": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n    \"score\": 0.75,\n    \"verdict\": \"needs_review\",\n    \"field_errors\": {\n        \"mae\": [\n            \"campo vazio ou sem informação\"\n        ]\n    },\n    \"notes\": \"O campo de 'mae' está vazio ou sem informação, o que é incoerente com um registro de batismo, onde a mãe do bebê deve estar mencionada. No entanto, o texto original não fornece informações sobre a mãe, pode ser um erro de transcrição.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "PIPELINE",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"htr_scope\": \"line\",\r\n    \"collection_name\": \"PortoDaCruz Batismos 1863 full\",\r\n    \"year\": \"1863\",\r\n    \"location\": \"Porto da Cruz, Madeira\",\r\n    \"collection_type\": \"batismo\",\r\n    \"image_dir\": \"/data/input/PortoDaCruz_Batismos_1863\",\r\n    \"output_formats\": [\"json\", \"csv\"],\r\n    \"record_template\": \"Aos <DIA> dias do mês de <MES>, do anno de mil oitocentos e <ANO>, pelo <HORARIO>, n’esta Igreja Parochial Nossa Senhora de Guadelupe, freguesia do Porto da Cruz, Concelho de Machico, Districto Ecclesiastico, e Diocese de Funchal, eu o Presbytero José Augusto de Freitas Vigário da mesma freguesia, baptisei solenemente e pus os Santos Oleos a uma criança do sexo <SEXO> a que dei o nome de <PRIMEIRO_NOME>, que nasceu as <HORA> horas da <PERIODO> do dia <DIA> do corrente mês, filha legítima (primeira deste nome) de <NOME_PAI>, <OCUPACAO>, e de sua mulher <NOME_MAE>, <VAR>recebidos nesta freguesia, e parochianos da mesma, moradores do Sitio da Terra do Baptista</VAR>; neta paterna de <NOME_COMPOSTO_MASC>, e de sua mulher <NOME_COMPOSTO_FEM>, e materna de <NOME_COMPOSTO_MASC>, e de dua mulher <NOME_COMPOSTO_FEM>. Foi padrinho <NOME_COMPOSTO_MASC>, <ESTADO_CIVIL>, lavrador e morador no <LOCAL>, e <NOME_COMPOSTO_FEM>, solteira, moradora no mesmo <LOCAL>; aos quais todos conheço serem os próprios. E para constar lavrei o presente assento da Baptismo, que depois de ser lido e conferido perante os Padrinhos, comigo o assignaram. Era ut supra. <OPT></OPT> <ASSINATURA> <ASSINATURA> <ASSINATURA>\"\r\n  }",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8000/pipeline/run",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8000",
+          "path": [
+            "pipeline",
+            "run"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "EVALUATE",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "pipeline_json",
+              "type": "file",
+              "uuid": "e4c7d0b6-8705-4446-b067-2faadcfcc345",
+              "src": "///GleizerNAS/alan/Documents/Mackenzie/_TCC/02_desenvolvimento/2026_04_13b_exec_colecao_1863/byline/portodacruz_batismos_1863_full_2026-04-14_01-55.json"
+            },
+            {
+              "key": "reference_csv",
+              "type": "file",
+              "uuid": "6625aeb9-6345-4449-9612-fb693f560965",
+              "src": "///GleizerNAS/alan/Documents/Mackenzie/_TCC/02_desenvolvimento/2026_04_13b_exec_colecao_1863/ground_truth_pc_1863.csv"
+            },
+            {
+              "key": "collection_type",
+              "value": "batismo",
+              "type": "text",
+              "uuid": "b51abdca-c97d-4b5f-90b5-efc907d83dbd"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:8001/evaluate",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8001",
+          "path": [
+            "evaluate"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}
