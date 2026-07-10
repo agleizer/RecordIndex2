@@ -11,5 +11,12 @@ font = "sans serif"
 # Esconde o menu/deploy do Streamlit na barra superior.
 toolbarMode = "minimal"
 
+[server]
+# Recarrega sozinho ao salvar o código (funciona com o volume ./frontend:/app).
+runOnSave = true
+# poll: o watcher inotify não atravessa o bind mount do Docker Desktop no Windows;
+# polling detecta as mudanças de forma confiável.
+fileWatcherType = "poll"
+
 [browser]
 gatherUsageStats = false

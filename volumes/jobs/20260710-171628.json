@@ -1,0 +1,49 @@
+{
+  "code": "20260710-171628",
+  "status": "failed",
+  "created_at": "2026-07-10T17:16:28",
+  "started_at": "2026-07-10T17:16:29",
+  "finished_at": "2026-07-10T17:25:11",
+  "collection_name": "PortoDaCruz Batismos 1863",
+  "collection_type": "batismo",
+  "config": {
+    "htr_scope": "line",
+    "collection_name": "PortoDaCruz Batismos 1863",
+    "year": "1863",
+    "location": "Porto da Cruz, Madeira",
+    "collection_type": "batismo",
+    "record_start_hint": "",
+    "record_template": "Aos <DIA> dias do mês de <MES>, do anno de mil oitocentos e <ANO>, pelo <HORARIO>, n’esta Igreja Parochial Nossa Senhora de Guadelupe, freguesia do Porto da Cruz, Concelho de Machico, Districto Ecclesiastico, e Diocese de Funchal, eu o Presbytero José Augusto de Freitas Vigário da mesma freguesia, baptisei solenemente e pus os Santos Oleos a uma criança do sexo <SEXO> a que dei o nome de <PRIMEIRO_NOME>, que nasceu as <HORA> horas da <PERIODO> do dia <DIA> do corrente mês, filha legítima (primeira deste nome) de <NOME_PAI>, <OCUPACAO>, e de sua mulher <NOME_MAE>, <VAR>recebidos nesta freguesia, e parochianos da mesma, moradores do Sitio da Terra do Baptista</VAR>; neta paterna de <NOME_COMPOSTO_MASC>, e de sua mulher <NOME_COMPOSTO_FEM>, e materna de <NOME_COMPOSTO_MASC>, e de dua mulher <NOME_COMPOSTO_FEM>. Foi padrinho <NOME_COMPOSTO_MASC>, <ESTADO_CIVIL>, lavrador e morador no <LOCAL>, e <NOME_COMPOSTO_FEM>, solteira, moradora no mesmo <LOCAL>; aos quais todos conheço serem os próprios. E para constar lavrei o presente assento da Baptismo, que depois de ser lido e conferido perante os Padrinhos, comigo o assignaram. Era ut supra. <OPT></OPT> <ASSINATURA> <ASSINATURA> <ASSINATURA>",
+    "image_dir": "/data/input/PortoDaCruz_Batismos_1863_sml",
+    "output_formats": [
+      "json",
+      "csv"
+    ]
+  },
+  "models": {
+    "a0": {
+      "provider": "ollama",
+      "model": "qwen3.5:9b"
+    },
+    "a2": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6"
+    },
+    "a3": {
+      "provider": "ollama",
+      "model": "qwen3.5:9b"
+    },
+    "a4": {
+      "provider": "ollama",
+      "model": "qwen3.5:9b"
+    },
+    "a5": {
+      "provider": "ollama",
+      "model": "qwen3.5:9b"
+    }
+  },
+  "num_images": 6,
+  "num_records": null,
+  "output_files": null,
+  "error": "interrompido por restart"
+}

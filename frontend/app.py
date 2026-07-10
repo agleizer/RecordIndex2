@@ -17,15 +17,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-import pandas as pd
 import requests
 import streamlit as st
-
-try:
-    from streamlit_autorefresh import st_autorefresh
-    _HAS_AUTOREFRESH = True
-except Exception:  # componente opcional
-    _HAS_AUTOREFRESH = False
 
 JOBS_URL = os.getenv("JOBS_URL", "http://jobs:8002")
 APP_URL = os.getenv("APP_URL", "http://app:8000")
@@ -86,6 +79,16 @@ def _get(url, **kw):
     r = requests.get(url, timeout=kw.pop("timeout", 30), **kw)
     r.raise_for_status()
     return r.json()
+
+
+def _md_table(rows: list[dict], headers: list[tuple[str, str]]) -> str:
+    """Tabela Markdown (sem pandas/Arrow — evita segfault do pyarrow no container)."""
+    def cell(v):
+        return "" if v is None else str(v).replace("|", "\\|")
+    head = "| " + " | ".join(label for _, label in headers) + " |"
+    sep = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(cell(r.get(k)) for k, _ in headers) + " |" for r in rows]
+    return "\n".join([head, sep] + body)
 
 
 # ---------------------------------------------------------------------------
@@ -180,26 +183,39 @@ with tab_run:
 
 
 # --- Aba Jobs --------------------------------------------------------------
+# Isolada num st.fragment: quando há job rodando, só este pedaço se atualiza
+# (run_every), sem rerodar o app inteiro nem congelar as outras abas. Timeouts
+# curtos garantem que um `app` ocupado no pipeline não trave a sessão.
 with tab_jobs:
     st.subheader("Execuções")
 
+    # Sonda curta só para decidir se o painel precisa se auto-atualizar.
     try:
-        jobs = _get(f"{JOBS_URL}/jobs")
-    except Exception as e:
-        st.error(f"Não foi possível falar com o serviço de jobs: {e}")
-        jobs = []
+        _probe = _get(f"{JOBS_URL}/jobs", timeout=5)
+        _running = any(j.get("status") == "running" for j in _probe)
+    except Exception:
+        _running = False
 
-    running = any(j.get("status") == "running" for j in jobs)
-    cols = st.columns([1, 1, 4])
-    if cols[0].button("Atualizar"):
+    top = st.columns([1, 5])
+    if top[0].button("Atualizar agora"):
         st.rerun()
-    auto = cols[1].toggle("Auto (5s)", value=running)
-    if auto and _HAS_AUTOREFRESH:
-        st_autorefresh(interval=5000, key="jobs_autorefresh")
-    elif auto and not _HAS_AUTOREFRESH:
-        cols[2].caption("streamlit-autorefresh não instalado; use o botão Atualizar.")
+    top[1].caption(
+        "Atualizando sozinho a cada 5s (há job rodando)." if _running
+        else "Sem job rodando. Use 'Atualizar agora' para recarregar."
+    )
 
-    if jobs:
+    @st.fragment(run_every="5s" if _running else None)
+    def _jobs_panel():
+        try:
+            jobs = _get(f"{JOBS_URL}/jobs", timeout=5)
+        except Exception as e:
+            st.warning(f"Serviço de jobs indisponível no momento: {e}")
+            return
+
+        if not jobs:
+            st.info("Nenhum job ainda. Dispare um na aba Executar.")
+            return
+
         table = [{
             "código": j["code"],
             "coleção": j.get("collection_name", ""),
@@ -209,52 +225,58 @@ with tab_jobs:
             "registros": j.get("num_records"),
             "modelos": _models_summary(j.get("models")),
         } for j in jobs]
-        st.dataframe(pd.DataFrame(table), use_container_width=True, hide_index=True)
+        st.markdown(_md_table(table, [
+            ("código", "código"), ("coleção", "coleção"), ("status", "status"),
+            ("criado", "criado"), ("imgs", "imgs"), ("registros", "registros"),
+            ("modelos", "modelos"),
+        ]))
 
-        code = st.selectbox("Ver detalhe do job", [j["code"] for j in jobs])
+        code = st.selectbox("Ver detalhe do job", [j["code"] for j in jobs], key="job_detail_sel")
         job = next((j for j in jobs if j["code"] == code), None)
-        if job:
-            status = job.get("status")
-            badge = {"queued": "🟡", "running": "🔵", "done": "🟢", "failed": "🔴"}.get(status, "")
-            st.markdown(f"### {badge} {code} — `{status}`")
+        if not job:
+            return
 
-            meta1, meta2, meta3 = st.columns(3)
-            meta1.metric("Imagens", job.get("num_images") or 0)
-            meta2.metric("Registros", job.get("num_records") or 0)
-            meta3.metric("Modelos", _models_summary(job.get("models")))
+        status = job.get("status")
+        badge = {"queued": "🟡", "running": "🔵", "done": "🟢", "failed": "🔴"}.get(status, "")
+        st.markdown(f"### {badge} {code} — `{status}`")
 
-            with st.expander("Config enviada ao pipeline"):
-                st.json(job.get("config", {}))
+        meta1, meta2, meta3 = st.columns(3)
+        meta1.metric("Imagens", job.get("num_images") or 0)
+        meta2.metric("Registros", job.get("num_records") or 0)
+        meta3.metric("Modelos", _models_summary(job.get("models")))
 
-            if status == "running":
-                st.markdown("**Log ao vivo** (últimas linhas)")
-                try:
-                    tail = _get(f"{APP_URL}/logs/tail", params={"lines": 200})
-                    st.code("".join(tail.get("tail", [])) or "(sem linhas ainda)")
-                except Exception as e:
-                    st.caption(f"log indisponível: {e}")
+        with st.expander("Config enviada ao pipeline"):
+            st.json(job.get("config", {}))
 
-            elif status == "done":
-                st.markdown("**Resultados**")
-                files = job.get("output_files") or {}
-                if not files:
-                    st.caption("Nenhum arquivo de saída registrado.")
-                for fmt, fname in files.items():
-                    fpath = OUTPUT_DIR / fname
-                    if fpath.exists():
-                        st.download_button(
-                            f"Baixar {fmt.upper()} ({fname})",
-                            data=fpath.read_bytes(),
-                            file_name=fname,
-                            key=f"dl_{code}_{fmt}",
-                        )
-                    else:
-                        st.caption(f"{fmt}: arquivo {fname} não encontrado em /data/output")
+        if status == "running":
+            st.markdown("**Log ao vivo** (últimas linhas)")
+            try:
+                tail = _get(f"{APP_URL}/logs/tail", params={"lines": 150}, timeout=5)
+                st.code("".join(tail.get("tail", [])) or "(sem linhas ainda)")
+            except Exception as e:
+                st.caption(f"log indisponível agora: {e}")
 
-            elif status == "failed":
-                st.error(job.get("error") or "Falhou sem mensagem.")
-    else:
-        st.info("Nenhum job ainda. Dispare um na aba Executar.")
+        elif status == "done":
+            st.markdown("**Resultados**")
+            files = job.get("output_files") or {}
+            if not files:
+                st.caption("Nenhum arquivo de saída registrado.")
+            for fmt, fname in files.items():
+                fpath = OUTPUT_DIR / fname
+                if fpath.exists():
+                    st.download_button(
+                        f"Baixar {fmt.upper()} ({fname})",
+                        data=fpath.read_bytes(),
+                        file_name=fname,
+                        key=f"dl_{code}_{fmt}",
+                    )
+                else:
+                    st.caption(f"{fmt}: arquivo {fname} não encontrado em /data/output")
+
+        elif status == "failed":
+            st.error(job.get("error") or "Falhou sem mensagem.")
+
+    _jobs_panel()
 
 
 # --- Aba Avaliar -----------------------------------------------------------
@@ -327,7 +349,11 @@ with tab_eval:
                     "tp": m.get("tp"), "fp": m.get("fp"), "fn": m.get("fn"),
                 })
             if rows:
-                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                st.markdown(_md_table(rows, [
+                    ("campo", "campo"), ("slot_acc", "slot_acc"),
+                    ("eff_slot_acc", "eff_slot_acc"), ("eff_f1", "eff_f1"),
+                    ("exact_rate", "exact_rate"), ("tp", "tp"), ("fp", "fp"), ("fn", "fn"),
+                ]))
 
             st.download_button(
                 "Baixar resultado completo (JSON)",

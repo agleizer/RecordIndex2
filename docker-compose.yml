@@ -131,6 +131,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
     volumes:
+      - ./frontend:/app                 # hot-reload do código do front (com runOnSave)
       - ./volumes/input:/data/input     # grava uploads de imagem
       - ./volumes/output:/data/output   # serve downloads dos resultados
     environment:
