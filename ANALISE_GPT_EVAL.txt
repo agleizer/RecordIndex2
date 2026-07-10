@@ -1,0 +1,448 @@
+ANALISE DO MODELO DE AVALIACAO DO RECORDINDEX2
+
+Resumo executivo
+================
+
+O modulo de avaliacao deste repositorio nao e um juiz LLM nem um modelo treinado. Ele e um servico FastAPI deterministico e offline, localizado em evaluation/, que compara o output do pipeline com um CSV arquivistico de referencia.
+
+A avaliacao separa duas dimensoes:
+
+1. Segmentacao: mede se o A3 produziu registros na quantidade e cobertura corretas.
+2. Extracao: mede se o A5 extraiu corretamente os campos de cada registro, mas apenas depois que um registro do pipeline foi alinhado a um registro de referencia.
+
+Essa separacao e uma boa decisao de engenharia, porque permite distinguir dois gargalos diferentes: o sistema pode estar segmentando mal, extraindo mal, ou ambos.
+
+
+Arquitetura do servico de avaliacao
+===================================
+
+O endpoint principal e POST /evaluate, definido em evaluation/app.py.
+
+Ele recebe:
+
+- pipeline_json: JSON gerado pelo endpoint /pipeline/run.
+- reference_csv: CSV arquivistico de referencia da colecao.
+- collection_type: batismo, casamento ou obito. O padrao e batismo.
+
+O fluxo e:
+
+1. Ler o JSON do pipeline.
+2. Extrair a lista records.
+3. Ler e parsear o CSV de referencia.
+4. Alinhar registros GT com registros produzidos pelo pipeline.
+5. Calcular metricas de segmentacao.
+6. Calcular metricas de extracao por campo.
+7. Gerar comparacoes registro a registro.
+8. Salvar um arquivo eval_YYYY-MM-DD_HH-MM.json em /data/output.
+
+O servico e independente do pipeline principal. Ele nao usa Ollama, GPU, agentes ou modelos generativos.
+
+
+Modelo de alinhamento
+=====================
+
+O alinhamento fica em evaluation/matcher.py. Esta e a parte mais importante do modelo de avaliacao, porque define quais registros do output sao considerados correspondentes aos registros do ground truth.
+
+A estrategia e greedy global best-match: para cada registro GT, o avaliador varre todos os registros de output ainda nao usados e escolhe aquele com maior score composto, desde que o score passe o threshold.
+
+Para batismo e obito, o score composto e:
+
+    nome 0.40 + pai 0.35 + mae 0.25
+
+Para casamento, o score composto e:
+
+    noivo 0.45 + noiva 0.35 + pai_noivo 0.20
+
+A similaridade de texto usa Jaro-Winkler via rapidfuzz, com normalizacao simples:
+
+- lowercase
+- trim
+- remocao de acentos
+
+Thresholds configuraveis por ambiente:
+
+- EVAL_MATCH_THRESHOLD: padrao 0.80
+- EVAL_NOME_MIN: padrao 0.65
+- EVAL_SECONDARY_RESCUE_MIN: padrao 0.85
+- EVAL_FUZZY_THRESHOLD: padrao 0.85
+
+O campo primario, como nome ou noivo, funciona como pre-filtro. Se a similaridade Jaro-Winkler do campo primario ficar abaixo de EVAL_NOME_MIN, o par normalmente e descartado. Existe uma excecao: se os campos secundarios presentes tiverem media alta, acima de EVAL_SECONDARY_RESCUE_MIN, o par pode ser recuperado.
+
+Essa escolha tenta lidar com erros reais de extracao, por exemplo quando o nome foi extraido errado mas pai e mae foram extraidos corretamente.
+
+
+Metricas de segmentacao
+=======================
+
+As metricas de segmentacao ficam em evaluation/metrics.py.
+
+Elas sao calculadas com:
+
+    precision = matched / total_output
+    recall    = matched / total_gt
+    f1        = media harmonica de precision e recall
+    ratio     = total_output / total_gt
+
+Interpretacao:
+
+- precision baixa indica muitos outputs sem correspondencia no GT, sugerindo hipersegmentacao ou registros espurios.
+- recall baixo indica muitos GTs nao encontrados, sugerindo subsegmentacao, fusao de registros ou cobertura parcial da colecao.
+- segmentation_ratio perto de 1.0 e ideal.
+- segmentation_ratio maior que 1.0 sugere hipersegmentacao.
+- segmentation_ratio menor que 1.0 sugere fusao/subsegmentacao.
+
+
+Metricas de extracao
+====================
+
+As metricas de extracao tambem ficam em evaluation/metrics.py.
+
+Elas sao calculadas apenas sobre pares alinhados. Ou seja, um registro GT que nao foi alinhado a nenhum output nao entra diretamente no F1 padrao de extracao. Em vez disso, a perda de cobertura aparece em:
+
+- _coverage
+- effective_recall
+- effective_f1
+
+Para cada campo, a regra e:
+
+- TP: o campo extraido passa no criterio fuzzy.
+- FP: o campo esta presente no output, mas nao passa no fuzzy match.
+- FN: o campo esta ausente no output.
+
+Para nomes e campos textuais, fuzzy significa Jaro-Winkler >= EVAL_FUZZY_THRESHOLD, padrao 0.85.
+
+Para data, fuzzy significa match do mes. O GT usa ISO, como 1866-01-04, mas o pipeline pode extrair texto livre em portugues. Portanto, uma data pode contar como correta se o mes do GT aparecer no texto extraido, mesmo que dia e ano nao estejam corretos.
+
+Isso torna a metrica de data mais branda do que uma avaliacao de data completa.
+
+
+Resultado empirico encontrado no repositorio
+============================================
+
+O artefato mais recente encontrado foi:
+
+    volumes/output/eval_2026-04-14_02-10.json
+
+Colecao:
+
+    batismo
+
+Metricas de segmentacao:
+
+    total_gt:           132
+    total_output:       119
+    matched:             94
+    unmatched_gt:        38
+    unmatched_output:    25
+    precision:       0.7899
+    recall:          0.7121
+    f1:              0.7490
+    segmentation_ratio: 0.9015
+
+Metricas de extracao:
+
+    nome:
+      f1:              0.9379
+      effective_f1:    0.7721
+
+    pai:
+      f1:              0.8606
+      effective_f1:    0.6995
+
+    mae:
+      f1:              0.7382
+      effective_f1:    0.5882
+
+    data:
+      f1:              0.8102
+      effective_f1:    0.6531
+
+Interpretacao: quando o registro e alinhado, a extracao de nome e relativamente forte. O desempenho global cai por causa da cobertura de segmentacao e, principalmente, pela precisao mais fraca no campo mae. A diferenca entre f1 e effective_f1 mostra que a qualidade end-to-end e menor do que a qualidade condicional aos registros que conseguiram ser alinhados.
+
+
+Riscos e limitacoes metodologicas
+=================================
+
+1. Alinhamento greedy global sem restricao posicional
+-----------------------------------------------------
+
+O alinhamento ignora a posicao do registro. Em teoria, o GT numero 1 pode ser alinhado com o output numero 130 se os campos forem parecidos o suficiente.
+
+Isso foi documentado no README como DT-21. A decisao tem uma justificativa pratica: usar posicao pura seria fragil quando o A3 hipersegmenta ou funde registros. O alinhamento por conteudo evita que um erro local de segmentacao desloque todos os registros seguintes.
+
+Mesmo assim, o metodo assume que o trio nome+pai+mae e quase unico dentro da colecao. Essa suposicao e razoavel para parte dos batismos paroquiais, mas fica mais fraca em colecoes com familias repetidas, nomes comuns, gemeos, registros proximos da mesma familia ou muitos homonimos.
+
+Solucoes possiveis:
+
+- adicionar uma penalidade leve por distancia posicional normalizada;
+- usar posicao apenas como tie-breaker, nao como filtro duro;
+- testar alinhamento bipartido global, como Hungarian matching, em vez de greedy;
+- registrar casos de colisao onde dois GTs disputam outputs com scores parecidos;
+- reportar uma metrica de confianca do alinhamento, por exemplo diferenca entre melhor e segundo melhor candidato.
+
+
+2. Suporte incompleto para casamento e obito
+--------------------------------------------
+
+O codigo define campos e pesos para casamento e obito, mas o parser de CSV para esses tipos ainda e placeholder. Em evaluation/csv_parser.py, _parse_casamento_line e _parse_obito_line retornam None.
+
+Na pratica, a avaliacao funcional hoje esta centrada em batismo. Casamento e obito existem como desenho arquitetural, mas nao como protocolo de avaliacao completo.
+
+Solucoes possiveis:
+
+- implementar parsers reais para os formatos de CSV de casamento e obito;
+- adicionar testes unitarios com exemplos reais de cada tipo;
+- separar claramente no texto academico o que foi implementado e o que foi apenas preparado para expansao;
+- calibrar pesos e thresholds separadamente por tipo de colecao, usando corpus real.
+
+
+3. A metrica de extracao nao e NER classico
+------------------------------------------
+
+Este e um ponto metodologico importante.
+
+No avaliador atual, para cada campo de um registro alinhado, o codigo assume que existe exatamente um valor esperado no GT. Em seguida:
+
+- se o output contem um valor suficientemente parecido, conta como TP;
+- se o output contem um valor, mas ele nao e parecido o suficiente, conta como FP;
+- se o output esta vazio, conta como FN.
+
+Isso nao e a mesma semantica de FP/FN usada em NER classico.
+
+Em NER classico, normalmente avaliamos entidades extraidas contra entidades de referencia. Um valor errado pode gerar simultaneamente:
+
+- um FP, porque o sistema extraiu uma entidade incorreta;
+- um FN, porque deixou de extrair a entidade correta.
+
+Exemplo:
+
+    GT:
+      mae = Maria de Jesus
+
+    Output:
+      mae = Anna Joaquina
+
+Na metrica atual:
+
+    FP += 1
+    FN += 0
+
+Em NER classico mais estrito:
+
+    FP += 1
+    FN += 1
+
+A diferenca e grande. Na metrica atual, um campo errado presente prejudica a precision, mas nao prejudica o recall. O recall so cai quando o campo esta vazio. Isso faz com que o recall de extracao possa ficar artificialmente alto se o modelo quase sempre preencher alguma coisa, mesmo que parte dessas coisas esteja errada.
+
+Isso aparece claramente no resultado encontrado:
+
+    mae:
+      tp = 55
+      fp = 39
+      fn = 0
+      recall = 1.0000
+      precision = 0.5851
+
+Esse recall de 1.0 nao significa que o sistema recuperou corretamente todas as maes. Significa apenas que, entre os registros alinhados, o campo mae nunca ficou vazio. Como 39 valores estavam presentes mas incorretos, eles foram tratados como FP, nao como FN. Portanto, o recall atual mede mais "taxa de preenchimento correto entre campos vazios/nao vazios" do que recuperacao completa da informacao correta.
+
+Isso e um grande problema metodologico?
+
+Depende de como a metrica e apresentada.
+
+Se o relatorio disser simplesmente "recall de extracao de mae = 1.0", isso e metodologicamente enganoso, porque sugere recuperacao perfeita do campo mae. Na verdade, a precision baixa mostra que muitos valores preenchidos estavam errados.
+
+Se o relatorio explicar explicitamente que:
+
+- FP significa campo preenchido incorretamente;
+- FN significa campo ausente;
+- recall mede somente perdas por ausencia em registros alinhados;
+- valores errados nao entram como FN;
+
+entao a metrica pode ser defendida como uma metrica operacional de formularios preenchidos, nao como NER classico.
+
+Mesmo assim, para um trabalho academico ou comparacao com literatura de extracao de informacao, a semantica atual e fraca. Ela dificulta comparar os resultados com outros sistemas, porque precision/recall/F1 nao significam exatamente o que costumam significar em NER ou information extraction.
+
+O problema principal e que erro de substituicao fica subcontado no denominador do recall.
+
+Formalmente, para um campo obrigatorio em que todo GT tem valor:
+
+    metrica atual:
+      TP = correto
+      FP = preenchido incorreto
+      FN = vazio
+
+    metrica classica por slot:
+      TP = correto
+      FP = preenchido incorreto
+      FN = vazio + preenchido incorreto
+
+Na metrica classica, uma resposta errada e duas coisas ao mesmo tempo:
+
+1. o sistema produziu algo que nao deveria produzir;
+2. o sistema deixou de produzir o valor correto.
+
+Na metrica atual, apenas o primeiro efeito e contado.
+
+Consequencias praticas:
+
+- recall pode ser inflado;
+- F1 pode ficar mais alto ou ter interpretacao distorcida;
+- campos sempre preenchidos tendem a ter FN = 0;
+- campos com alucinacoes frequentes parecem ter problema de precision, mas nao de recall;
+- a comparacao entre campos fica enviesada quando alguns campos sao quase sempre preenchidos e outros ficam vazios;
+- a comparacao com artigos de NER/IE fica metodologicamente fragil.
+
+Isso nao invalida a avaliacao inteira, mas exige cuidado na nomenclatura. O avaliador atual mede uma tarefa de preenchimento de slots sobre registros ja alinhados, usando uma definicao assimetrica de erro. Ele nao mede NER classico.
+
+
+Solucoes recomendadas para o problema FP/FN
+==========================================
+
+Solucao 1: renomear as metricas atuais
+--------------------------------------
+
+Manter o calculo atual, mas trocar os nomes ou explicar com destaque:
+
+- precision_atual -> field_value_precision
+- recall_atual -> field_presence_recall ou non_empty_recall_adjusted
+- f1_atual -> conditional_slot_f1
+
+Essa solucao e simples, mas nao corrige a fragilidade comparativa. Ela apenas evita interpretacao errada.
+
+
+Solucao 2: adicionar metricas strict por campo
+----------------------------------------------
+
+Adicionar uma segunda visao, mais proxima de IE/NER classico:
+
+Para cada campo:
+
+    se correto:
+      TP += 1
+
+    se presente mas incorreto:
+      FP += 1
+      FN += 1
+
+    se ausente:
+      FN += 1
+
+Com isso, no exemplo mae:
+
+    tp = 55
+    fp = 39
+    fn = 39
+
+O recall deixaria de ser 1.0 e passaria a:
+
+    recall = 55 / (55 + 39) = 0.5851
+
+Nesse caso, precision e recall ficam iguais porque todo registro tinha algum valor preenchido. Isso comunica melhor o fato real: apenas 55 de 94 maes alinhadas foram corretamente extraidas.
+
+Essa e a solucao mais importante para robustez metodologica.
+
+
+Solucao 3: reportar acuracia por slot
+-------------------------------------
+
+Para campos obrigatorios e de cardinalidade 1, como nome, pai, mae e data, a metrica mais clara pode ser simplesmente:
+
+    slot_accuracy = campos_corretos / registros_alinhados
+
+Ou, com cobertura:
+
+    effective_slot_accuracy = campos_corretos / total_gt
+
+Isso e facil de explicar:
+
+- "Entre os registros alinhados, quantas maes foram extraidas corretamente?"
+- "Entre todos os registros do GT, quantas maes o sistema entregou corretamente?"
+
+Essa metrica evita a ambiguidade de FP/FN quando ha exatamente um valor esperado por campo.
+
+
+Solucao 4: separar tres categorias de erro
+------------------------------------------
+
+Em vez de forcar tudo em precision/recall, reportar contagens diretas:
+
+- correct
+- wrong_present
+- missing
+
+Exemplo:
+
+    mae:
+      correct: 55
+      wrong_present: 39
+      missing: 0
+      aligned_total: 94
+
+E derivar:
+
+    correctness_rate = correct / aligned_total
+    fill_rate = (correct + wrong_present) / aligned_total
+    missing_rate = missing / aligned_total
+    wrong_when_filled_rate = wrong_present / (correct + wrong_present)
+
+Essa abordagem e excelente para diagnostico, porque mostra se o problema e ausencia, erro de valor ou excesso de preenchimento.
+
+
+Solucao 5: manter effective_f1, mas recalcular com FN strict
+------------------------------------------------------------
+
+O repositorio ja tem effective_recall e effective_f1 para incluir registros nao alinhados. Essa ideia e boa, mas deveria haver uma variante strict:
+
+    strict_effective_recall = TP / (TP + FN_strict + unmatched_gt)
+
+Onde:
+
+    FN_strict = missing + wrong_present
+
+Assim, registros nao alinhados e valores errados afetariam o recall end-to-end.
+
+
+Solucao 6: apresentar duas familias de metricas
+-----------------------------------------------
+
+Recomendacao mais equilibrada:
+
+1. Metricas operacionais atuais:
+   - mostram se o sistema preenche campos e se os valores preenchidos sao confiaveis;
+   - uteis para engenharia e depuracao.
+
+2. Metricas strict academicas:
+   - tratam valor errado como FP + FN;
+   - melhores para relatorio, comparacao e conclusao quantitativa.
+
+No texto, eu recomendaria usar a metrica strict como principal e deixar a metrica atual como diagnostica.
+
+
+Recomendacao final
+==================
+
+Para o TCC ou relatorio tecnico, eu nao apresentaria os valores atuais de precision/recall/F1 de extracao sem ressalva. O ponto mais critico e o recall: como valores errados presentes nao contam como FN, o recall pode ficar artificialmente alto.
+
+A recomendacao e:
+
+1. Manter o avaliador atual para continuidade historica.
+2. Adicionar uma nova secao de metricas strict por campo.
+3. Reportar slot_accuracy e effective_slot_accuracy.
+4. Explicar que o CSV arquivistico e um indice, nao uma transcricao completa.
+5. Dizer claramente que a avaliacao e de preenchimento de campos arquivisticos, nao de NER token-level.
+
+Com essas mudancas, a avaliacao fica metodologicamente mais defensavel e mais facil de explicar.
+
+
+Distincao entre avaliacao offline e A6
+======================================
+
+O A6, dentro do pipeline principal, gera validation.score, verdict e field_errors para cada registro. Ele e uma validacao interna de qualidade do proprio pipeline.
+
+O modulo evaluation/ e diferente: ele compara o resultado final com um ground truth externo. O A6 pode aparecer no JSON de comparacao como output_validation, mas nao e usado como criterio principal de corretude.
+
+Portanto:
+
+- A6 = autovalidacao do pipeline.
+- evaluation/ = avaliacao externa contra referencia.
+

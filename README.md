@@ -838,25 +838,36 @@ PT/ABM/PMCH04/001/00025/000001; Registo de batismo n.º 1: Maria. Pai: Romano de
 
 **Camada 1 — Segmentação (mede A3):** calculada sobre `total_gt` vs `total_output`, independente de extração. `recall` baixo quando processamos apenas parte das páginas da coleção — normal. `segmentation_ratio` = `total_output / total_gt` (1.0 = ideal; >1 = hipersegmentação; <1 = fusão).
 
-**Camada 2 — Extração (mede A5):** calculada **apenas** sobre pares alinhados. `_coverage` = fração do GT com alinhamento confiável. Para cada campo são reportadas duas visões:
+**Camada 2 — Extração (mede A5):** calculada **apenas** sobre pares alinhados. `_coverage` = fração do GT com alinhamento confiável.
+
+**Semântica adotada (NER estrita):** valor incorreto presente = FP **e** FN simultaneamente. Campo ausente = apenas FN. Isso garante equivalência com literatura de NER/IE — campos sempre preenchidos (mesmo que errados) não inflam artificialmente o recall.
+
+**Métricas principais de reporte:**
 
 | Métrica | O que mede | Denominador |
 |---|---|---|
-| `precision` | Dos valores extraídos nos registros casados, quantos estão corretos | tp + fp |
-| `recall` | Dos campos presentes nos registros casados, quantos foram extraídos | tp + fn |
-| `f1` | Harmônica de precision e recall (condicional à cobertura) | — |
-| `effective_recall` | Dos campos presentes em **todos** os GT, quantos foram extraídos | tp + fn + unmatched_gt |
-| `effective_f1` | Harmônica de precision e effective_recall (visão end-to-end) | — |
+| `effective_slot_accuracy` | De todos os GT, quantos tiveram o campo extraído corretamente | total_GT (132) |
+| `slot_accuracy` | Dos registros casados, quantos tiveram o campo extraído corretamente | matched (94) |
+| `strict_effective_f1` | F1 end-to-end com semântica NER estrita — para comparação com literatura | — |
 
-> **Por que duas visões?** `f1` isola a qualidade de A5 (dado que A3 encontrou o registro, A5 extraiu corretamente?). `effective_f1` combina A3 + A5 numa única métrica de sistema. Para reportar o desempenho geral do pipeline, usar `effective_f1`. Para diagnosticar onde está o gargalo, comparar `f1` com `_coverage`.
+**Métricas de diagnóstico** (sobre registros casados):
 
-> **`effective_precision` = `precision`** — registros GT não-casados não afetam o que foi extraído nos registros casados. Os FP existentes não mudam. Não há campo separado para evitar redundância.
+| Métrica | O que mede |
+|---|---|
+| `precision` | tp / (tp + fp) — qualidade do que foi extraído |
+| `strict_recall` | tp / (tp + fn_strict) — recall com semântica estrita |
+| `fn_strict` | fn + fp — erros totais (ausências + valores errados) |
+
+**Métricas legadas** (mantidas para compatibilidade, semântica antiga — valor errado = FP apenas):
+`recall`, `f1`, `effective_recall`, `effective_f1` — não usar como métrica principal do relatório.
+
+> **Qual usar?** Para desempenho geral: `effective_slot_accuracy` (imediato: "62,9% dos 132 registros tiveram o nome correto"). Para comparação com NER/IE: `strict_effective_f1`. Para diagnosticar gargalo A3 vs A5: `slot_accuracy` vs `_coverage`.
 
 **Alinhamento:** score composto ponderado nome (0.40) + pai (0.35) + mãe (0.25), com Jaro-Winkler e normalização de acentos. Pré-filtro: nome JW ≥ 0.65. Threshold final: 0.80.
 
 **Data:** comparação por mês (extrai mês do texto português extraído vs. mês do ISO GT). `exact_match_rate` reporta casos onde A5 extraiu data em formato ISO diretamente.
 
-**Semântica de FP/FN (não-padrão vs NER clássico):** FP = campo presente no output mas incorreto (JW < 0.85). FN = campo ausente no output. GT sempre tem todos os campos preenchidos, portanto FN real = extração vazia.
+**Semântica de FP/FN (NER estrita, implementada em 02/05/2026):** FP = campo presente no output mas incorreto (JW < 0.85). FN = campo ausente no output. `fn_strict = fn + fp` — valor incorreto presente conta como FP **e** FN. Métrica principal: `effective_slot_accuracy = tp / total_GT`.
 
 Documentação do protocolo completo: `02_desenvolvimento/2026_03_23_protocolo_avaliacao/protocolo_avaliacao.md`
 
