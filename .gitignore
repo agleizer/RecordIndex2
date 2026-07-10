@@ -6,9 +6,11 @@
 volumes/input/*
 volumes/output/*
 volumes/samples/*
+volumes/jobs/*
 !volumes/input/.gitkeep
 !volumes/output/.gitkeep
 !volumes/samples/.gitkeep
+!volumes/jobs/.gitkeep
 
 # Modelos Ollama — caso alguém use bind mount em vez de named volume
 volumes/ollama/
