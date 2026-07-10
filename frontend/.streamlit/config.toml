@@ -1,0 +1,15 @@
+# Tema RecordIndex — escuro com destaque laranja, espelhando o app antigo.
+[theme]
+base = "dark"
+primaryColor = "#F0531C"
+backgroundColor = "#1A1A1A"
+secondaryBackgroundColor = "#262626"
+textColor = "#FAFAFA"
+font = "sans serif"
+
+[client]
+# Esconde o menu/deploy do Streamlit na barra superior.
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
