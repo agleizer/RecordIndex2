@@ -1153,6 +1153,12 @@ O export dos resultados sai do banco: `GET /jobs/{code}/export?fmt=json|csv|txt`
 
 **Duplicação consciente (decisão adiada, não débito).** O back continua escrevendo os arquivos `json/csv/txt` em `/data/output` ao mesmo tempo em que os registros vão para o Postgres. Isso é proposital: o **arquivo JSON ainda é consumido pelo fluxo de avaliação** (serviço `eval` e aba Avaliar leem de `/data/output`), então parar de escrevê-lo quebraria o eval. O download normal do front já vem do banco; os arquivos em disco só servem de fallback para jobs antigos (anteriores a esta migração) ou quando o `save_records` falha. A convergência (fazer o `eval` ler do banco, então parar a escrita em disco e aposentar o campo `output_formats` do `PipelineRunRequest`) fica registrada como passo futuro, sem urgência.
 
+### Login do front ✅ (TCC 2 — 12/07/2026)
+
+Gate de acesso simples na interface Streamlit: credencial única em `FRONT_USER` / `FRONT_PASSWORD` (`.env`), comparada server-side com `hmac.compare_digest`, estado na sessão. `FRONT_PASSWORD` vazio desliga o gate.
+
+**Escopo, honesto:** protege apenas o front. Os serviços `jobs` (8002), `app` (8000), `eval` (8001) e o Postgres (5433) seguem publicados e sem autenticação, por decisão (permite exercitar os endpoints durante o desenvolvimento da arquitetura). Ou seja, o login é um gate de UI, não uma fronteira de segurança do sistema. Se um dia isso for exposto publicamente, o passo necessário é parar de publicar essas portas (remover os `ports:`, deixando os serviços só na rede interna do compose, e acessar o Postgres por túnel) antes de confiar no login.
+
 ### Experimento: granularidade de input do A2 (página vs linha vs bloco)
 
 **Problema:** A2 recebe crops de linha individualmente (saída do A1). Não foi avaliado se passar blocos de texto ou a página inteira melhoraria a qualidade da transcrição — o contexto visual maior pode ajudar o modelo a interpretar palavras ambíguas.

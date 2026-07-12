@@ -164,6 +164,8 @@ services:
       - EVAL_URL=http://eval:8001
       - INPUT_DIR=/data/input
       - OUTPUT_DIR=/data/output
+      - FRONT_USER=${FRONT_USER}
+      - FRONT_PASSWORD=${FRONT_PASSWORD}
     ports:
       - "8501:8501"
     depends_on:

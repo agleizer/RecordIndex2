@@ -10,6 +10,7 @@ Fala com os serviços por HTTP (jobs:8002, app:8000, eval:8001) e lê/escreve
 no volume compartilhado /data. Não toca no back-end.
 """
 
+import hmac
 import io
 import json
 import os
@@ -112,6 +113,35 @@ def _md_table(rows: list[dict], headers: list[tuple[str, str]]) -> str:
     return "\n".join([head, sep] + body)
 
 
+def _check_login():
+    """Gate de acesso ao front. Credencial única em FRONT_USER/FRONT_PASSWORD (.env).
+    Comparação server-side com compare_digest. Protege apenas o Streamlit: os
+    serviços jobs/app/eval seguem acessíveis por suas portas, por decisão (permite
+    bater nos endpoints durante o desenvolvimento). FRONT_PASSWORD vazio desliga o
+    gate. Ver nota no README."""
+    if st.session_state.get("auth_ok"):
+        return
+
+    exp_user = os.getenv("FRONT_USER", "")
+    exp_pass = os.getenv("FRONT_PASSWORD", "")
+    if not exp_pass:  # gate desligado quando não há senha configurada
+        return
+
+    with st.form("login"):
+        st.markdown("#### Entrar")
+        user = st.text_input("Usuário")
+        pwd = st.text_input("Senha", type="password")
+        submitted = st.form_submit_button("Entrar")
+    if submitted:
+        ok_user = hmac.compare_digest(user, exp_user)
+        ok_pass = hmac.compare_digest(pwd, exp_pass)
+        if ok_user and ok_pass:
+            st.session_state["auth_ok"] = True
+            st.rerun()
+        st.error("Usuário ou senha inválidos.")
+    st.stop()
+
+
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
@@ -121,6 +151,8 @@ if LOGO_PATH.exists():
     _h1.image(str(LOGO_PATH), width=110)
 _h2.title("RecordIndex 2.0")
 _h2.caption("Indexação de registros históricos por decomposição multiagente")
+
+_check_login()
 
 tab_run, tab_jobs, tab_eval = st.tabs(["Executar", "Jobs", "Avaliar"])
 
