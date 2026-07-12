@@ -15,6 +15,7 @@ import io
 import json
 import os
 import re
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -103,6 +104,18 @@ def _export_bytes(code, fmt):
     return r.content
 
 
+def _short_page(p) -> str:
+    """Encurta o nome longo da imagem (ex: ..._downloaded_image_0002) para a tabela."""
+    p = p or ""
+    return p if len(p) <= 28 else "…" + p[-26:]
+
+
+def _norm(s) -> str:
+    """Normaliza para busca: remove acentos e caixa (gouvea casa com Gouvêa)."""
+    s = unicodedata.normalize("NFKD", str(s or ""))
+    return "".join(c for c in s if not unicodedata.combining(c)).lower()
+
+
 def _md_table(rows: list[dict], headers: list[tuple[str, str]]) -> str:
     """Tabela Markdown (sem pandas/Arrow — evita segfault do pyarrow no container)."""
     def cell(v):
@@ -154,7 +167,7 @@ _h2.caption("Indexação de registros históricos por decomposição multiagente
 
 _check_login()
 
-tab_run, tab_jobs, tab_eval = st.tabs(["Executar", "Jobs", "Avaliar"])
+tab_run, tab_jobs, tab_eval, tab_index = st.tabs(["Executar", "Jobs", "Avaliar", "Índice"])
 
 
 # --- Aba Executar ----------------------------------------------------------
@@ -449,3 +462,72 @@ with tab_eval:
                 st.json(res)
         except Exception as e:
             st.error(f"Falha na avaliação: {e}")
+
+
+# --- Aba Índice ------------------------------------------------------------
+with tab_index:
+    st.subheader("Índice de registros")
+    st.caption("Selecione um job concluído para ver a tabela completa dos registros extraídos do banco.")
+
+    try:
+        _all_jobs = _get(f"{JOBS_URL}/jobs")
+    except Exception as e:
+        _all_jobs = []
+        st.error(f"Não foi possível listar os jobs: {e}")
+
+    _done = [j for j in _all_jobs if j.get("status") == "done" and (j.get("num_records") or 0) > 0]
+    if not _done:
+        st.info("Nenhum job concluído com registros ainda.")
+    else:
+        _opts = {
+            f"{j['code']} — {j.get('collection_name', '?')} "
+            f"({j.get('collection_type') or '?'}, {j.get('num_records')} reg.)": j["code"]
+            for j in _done
+        }
+        _label = st.selectbox("Job", list(_opts.keys()), key="idx_job")
+        _code = _opts[_label]
+
+        try:
+            _records = _job_records(_code)
+        except Exception as e:
+            _records = []
+            st.error(f"Falha ao carregar registros: {e}")
+
+        # Filtro opcional, client-side sobre os registros já carregados deste job.
+        # Não dispara query nova (evita seq scan cross-job). Casa só contra os
+        # campos extraídos (o índice), não contra o texto do assento: o boilerplate
+        # do texto (padre, paróquia) casaria com quase tudo. Insensível a acento.
+        _termo = _norm(st.text_input(
+            "Filtrar pelos campos (nome, pai/mãe, noivo, data...)", key="idx_q"
+        ).strip())
+        if _termo:
+            def _match(r):
+                blob = " ".join(str(v) for v in (r.get("fields") or {}).values())
+                return _termo in _norm(blob)
+            _shown = [r for r in _records if _match(r)]
+        else:
+            _shown = _records
+
+        st.caption(f"{len(_shown)} de {len(_records)} registro(s)")
+
+        if _shown:
+            # Colunas = fixas + união das chaves de fields (um job = um tipo,
+            # então as colunas são consistentes).
+            _keys, _seen = [], set()
+            for r in _shown:
+                for k in r.get("fields") or {}:
+                    if k not in _seen:
+                        _seen.add(k)
+                        _keys.append(k)
+            _headers = [("record_id", "Reg"), ("page", "Página")] + [(k, k) for k in _keys]
+            _rows = []
+            for r in _shown:
+                row = {"record_id": r.get("record_id"), "page": _short_page(r.get("page"))}
+                row.update(r.get("fields") or {})
+                _rows.append(row)
+            st.markdown(_md_table(_rows, _headers))
+
+            with st.expander("Ver texto completo dos registros"):
+                for r in _shown:
+                    st.markdown(f"**[{r.get('record_id')}] {_short_page(r.get('page'))}**")
+                    st.write(r.get("text") or "")
