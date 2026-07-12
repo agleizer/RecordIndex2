@@ -7,6 +7,8 @@ Continuação acadêmica do RecordIndex v1.0 (Iniciação Científica).
 
 **TCC 1 — prazos:** relatório + pôster: 06–11/05/2026 · Mostra de TCC I: 10/06/2026
 
+> **Estado atual — TCC 2 (10/07/2026).** Foco na **arquitetura multiagente (MAS)**. Deploy **local** (a ida para a cloud foi engavetada) e **tudo Claude escalonado** (Opus no HTR, Haiku no resto), config por `.env`. Além de `app` (8000) e `eval` (8001), há dois serviços novos: **`jobs`** (fila serial assíncrona, 8002) e **`frontend`** (Streamlit, 8501). O back (`src/`, `evaluation/`) permanece intocado. Decisões e plano em `02_desenvolvimento/2026_07_10_front_e_servico_jobs/`.
+
 ---
 
 ## Visão geral
@@ -118,7 +120,7 @@ O A0 pode escalar para um provider externo em runtime injetando `a2_model_overri
 
 ```
 RecordIndex2/
-├── docker-compose.yml          # Serviços: app, ollama, ollama-init, docufcn-init
+├── docker-compose.yml          # Serviços: app, eval, jobs, frontend, ollama, ollama-init, docufcn-init
 ├── prompts.yaml                # Prompts de todos os agentes (montado como volume)
 ├── .env                        # Configuração local (gitignored)
 ├── .env.example                # Template de configuração (commitado)
@@ -167,6 +169,19 @@ RecordIndex2/
 │   ├── csv_parser.py       # Parse do CSV arquivístico (batismo)
 │   ├── matcher.py          # Alinhamento por score composto nome+pai+mae (JW)
 │   └── metrics.py          # segmentation_metrics(), extraction_metrics(), compare_field()
+│
+├── jobs/                       # Serviço de fila (TCC 2, 10/07) — porta 8002
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── app.py              # FastAPI: POST /jobs, GET /jobs[/{code}] + worker serial
+│   └── store.py            # persistência dos jobs em /data/jobs/<code>.json
+│
+├── frontend/                   # Interface Streamlit (TCC 2, 10/07) — porta 8501
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── app.py              # 3 abas: Executar / Jobs / Avaliar
+│   ├── assets/RI_logo.png
+│   └── .streamlit/config.toml  # tema RecordIndex + runOnSave
 │
 └── volumes/                    # Dados de execução (bind mounts, gitignored)
     ├── input/                  # Imagens de páginas para processar
@@ -889,21 +904,19 @@ O relatório do TCC 1 descreve:
 
 O que **não** entra no TCC 1: comparação exaustiva de modelos, app com usuários, infraestrutura de produção, testes em escala com cloud.
 
-### TCC 2 — experimentação em escala e engenharia de software
+### TCC 2 — arquitetura multiagente (MAS) + interface + experimentação
 
-O TCC 2 usa o sistema construído no TCC 1 como base para dois eixos:
+**⚠️ Virada de foco (18/06/2026), atualizada em 10/07.** A contribuição do TCC 2 é a **arquitetura multiagente (decomposição cooperativa) e a seleção de modelo por agente**, não engenharia de produto.
 
-**Eixo 1 — Experimentação em escala:**
-- Rodar o mesmo pipeline em infraestrutura cloud (AWS ou similar)
-- Usar modelos Ollama de grande porte (200–300B parâmetros) — o "melhor dos dois mundos": privacidade/custo do Ollama local com qualidade de modelos frontier
-- Comparação sistemática entre configurações de modelo por agente
-- Novos tipos de coleção (casamentos, óbitos, outras dioceses)
+**O que está no TCC 2:**
+- Seleção de modelo por agente: **tudo Claude escalonado** (Opus no HTR, Haiku no resto). Substitui a ideia antiga de comparar modelos Ollama 200–300B na cloud.
+- Ciclo baseline → **melhorias de arquitetura** (structured output, fallback A6→A0→A2, validação de casamento/óbito, gargalo do A5) → novo baseline, para medir o ganho.
+- Experimentação em mais coleções e tipos (casamento, óbito).
+- **Interface mínima + fila de jobs** (serviços `frontend` e `jobs`, 10/07) como ferramenta de operação/experimentação.
 
-**Eixo 2 — Engenharia de software e produto:**
-- API assíncrona com jobs (`job_id`, polling, armazenamento)
-- Mensageria (filas, workers)
-- Frontend para usuários (Streamlit ou similar)
-- Autenticação, multi-tenancy, histórico de coleções
+**O que saiu do TCC 2:**
+- **Cloud** — engavetada em 10/07 (talvez definitiva). Deploy local via Docker Compose. Portabilidade fica como argumento de arquitetura (`get_chat_model` agnóstico) + PoC mínimo, não como run caro de modelo grande.
+- **Produto multi-usuário:** API assíncrona pública, mensageria pesada, autenticação, multi-tenancy.
 
 ### API síncrona é suficiente para o TCC 1
 
@@ -918,6 +931,8 @@ A arquitetura de produto correta seria:
 **Por que não implementar agora:** o protocolo de avaliação do TCC roda offline — o avaliador lê o `output.json` produzido pelo pipeline, não há usuário em tempo real. Para demonstrar o pipeline e gerar os resultados da avaliação, a API síncrona + Postman é suficiente.
 
 **Quando implementar:** se o projeto evoluir para produto após a entrega. Isso pertence à seção de Trabalhos Futuros do relatório.
+
+> **Atualização TCC 2 (10/07):** o disparo assíncrono foi implementado no serviço `jobs` (fila serial + polling via `GET /jobs/{code}`), **sem** tornar o `/pipeline/run` assíncrono — o back segue intocado. Ver Débitos Técnicos → "Pipeline assíncrono".
 
 ### Teste via Postman é intencional
 
@@ -1110,36 +1125,25 @@ O módulo resolve o problema de métricas posicionais: alinhamento por score com
 
 ---
 
-### Frontend Streamlit (Trabalho Futuro)
+### Frontend Streamlit ✅ Implementado (TCC 2 — 10/07/2026)
 
-**Problema:** interação atual via Postman/API é adequada para desenvolvimento mas inacessível para usuários não-técnicos (pesquisadores de genealogia, arquivistas).
+Interface Streamlit no serviço `frontend` (porta 8501), três abas: **Executar** (formulário do pipeline + ingestão por diretório existente ou upload, dispara um job), **Jobs** (lista as execuções, status, log ao vivo, download dos resultados) e **Avaliar** (envolve o `POST /evaluate`). Fala com os serviços por HTTP e lê/escreve no volume `/data`. **Não toca no back.**
 
-**Proposta:** frontend em Streamlit — escolha pragmática (Python puro, sem JavaScript, fácil de subir como container adicional).
+**Decisões de implementação (aprendidas em runtime):**
+- O `/pipeline/run` é síncrono e leva horas → não é chamado direto pelo front. O front dispara um **job** no serviço `jobs` (ver abaixo), que enfileira e executa em background; o front só faz poll do status.
+- A aba Jobs fica num `st.fragment(run_every="5s")` — atualiza só aquele painel sem rerodar o app inteiro (evita o freeze/"Connection error" do Streamlit). Timeouts curtos nas chamadas de status.
+- Tabelas renderizadas como **Markdown**, não `st.dataframe` — o caminho Arrow/pyarrow causava segfault (exit 139) no container. Front sem pandas.
+- Hot-reload em dev: bind mount `./frontend:/app` + `runOnSave`/`fileWatcherType=poll` no `config.toml` (poll necessário no bind mount do Docker Desktop no Windows).
 
-**Fluxo mínimo:**
-1. Upload de imagens de página (múltiplos arquivos)
-2. Configurar coleção (nome, tipo, template opcional)
-3. Botão "Processar" → aciona `/pipeline/run` via HTTP
-4. Progress bar lendo `/logs/tail` via polling
-5. Exibir resultado estruturado em tabela (registros × campos)
-6. Download do `output.json` e do relatório de avaliação
-
-**Complicadores:**
-- `/pipeline/run` é síncrono — Streamlit vai bloquear na chamada. Precisaria de job assíncrono (ver DT de pipeline assíncrono) ou `st.spinner` com timeout generoso
-- Upload de imagens precisa de endpoint dedicado que aceite múltiplos arquivos e os salve em `volumes/input/` antes de rodar o pipeline
-- Se rodar em container separado: adicionar serviço `frontend` ao `docker-compose.yml`, porta 8501
-
-**Decisão:** fora do escopo do TCC. Mencionável em Trabalhos Futuros como direção natural de produto. Não implementar antes de ter avaliação e escrita completas.
-
-**Status:** ideia registrada. Retomar após entrega do TCC.
+**Nota de escopo:** é ferramenta de operação/experimentação (uso local), não produto multi-usuário. Autenticação, multi-tenancy e histórico por usuário seguem fora de escopo.
 
 ---
 
-### Pipeline assíncrono (jobs + polling)
+### Pipeline assíncrono (jobs + polling) ✅ Implementado (TCC 2 — 10/07/2026)
 
-**Problema:** `/pipeline/run` é síncrono. Para uso interativo com UI, seria necessário job_id + polling.
+**Problema:** `/pipeline/run` é síncrono e pode levar horas; para uso via UI é preciso disparar e acompanhar depois.
 
-**Decisão:** fora do escopo do TCC. Pré-requisito para o frontend Streamlit funcionar bem. Implementar como Trabalho Futuro.
+**Solução:** serviço `jobs` (porta 8002), **sem tocar no back**. Recebe o pedido (`POST /jobs`, mesmo JSON do `PipelineRunRequest`), enfileira em disco (`/data/jobs/<code>.json`) e um **worker único, serial** chama o `/pipeline/run` do `app`, um job por vez, segurando até terminar. Endpoints: `POST /jobs`, `GET /jobs`, `GET /jobs/{code}`. **Não é mensageria** (Redis/Celery) — fila em arquivos + thread daemon. Cada job guarda a foto da config de modelos (`GET app/health`) no início, para o histórico registrar qual modelo rodou. Restart no meio de um job → marca `failed` (sem checkpoint). O estado persiste em bind mount, sobrevive a restart e a `docker compose down`.
 
 ### Experimento: granularidade de input do A2 (página vs linha vs bloco)
 
@@ -1489,6 +1493,6 @@ return configured | RunnableLambda(lambda msg: msg.content) | parser
 
 **RecordIndex 2.0 — TCC 1** (entrega 06/2026): arquitetura multi-agente onde LLMs multimodais assumem HTR, segmentação de registros e extração de entidades. doc-UFCN permanece para segmentação de linhas (tarefa estrutural onde CNNs ainda são competitivas). Objetivo do TCC 1: pipeline funcional com métricas de avaliação aceitáveis + relatório baseado nos resultados reais do sistema.
 
-**RecordIndex 2.0 — TCC 2** (fase futura): usar o pipeline do TCC 1 para experimentação em escala (cloud + modelos 200–300B parâmetros) e evolução para produto (API assíncrona, mensageria, usuários, frontend). O TCC 2 não recomeça do zero — constrói sobre a fundação do TCC 1.
+**RecordIndex 2.0 — TCC 2** (em andamento; foco definido em 18/06, ajustado em 10/07): usar o pipeline do TCC 1 para aprofundar a **arquitetura multiagente** — seleção de modelo por agente (tudo Claude escalonado), melhorias de arquitetura medidas por baseline, e experimentação em mais coleções — operado por uma **interface mínima + fila de jobs** (deploy local). A ida para a cloud e o uso de modelos 200–300B foram engavetados. O TCC 2 não recomeça do zero — constrói sobre a fundação do TCC 1.
 
 Hipótese central (TCC 1): LLMs melhoram a transcrição de texto padrão mas podem degradar nomes próprios (alucinação). O protocolo de avaliação mede isso explicitamente por campo.
