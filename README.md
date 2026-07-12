@@ -173,13 +173,14 @@ RecordIndex2/
 ├── jobs/                       # Serviço de fila (TCC 2, 10/07) — porta 8002
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   ├── app.py              # FastAPI: POST /jobs, GET /jobs[/{code}] + worker serial
-│   └── store.py            # persistência dos jobs em /data/jobs/<code>.json
+│   ├── app.py              # FastAPI: POST /jobs, GET /jobs[/{code}][/records], /export[, /formats] + worker serial
+│   ├── store.py            # persistência dos jobs e registros no Postgres (jobsdb) — 12/07
+│   └── exporters.py        # registro único de formatos de export (csv/txt/json) — 12/07
 │
 ├── frontend/                   # Interface Streamlit (TCC 2, 10/07) — porta 8501
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   ├── app.py              # 3 abas: Executar / Jobs / Avaliar
+│   ├── app.py              # login + 4 abas: Executar / Jobs / Avaliar / Índice
 │   ├── assets/RI_logo.png
 │   └── .streamlit/config.toml  # tema RecordIndex + runOnSave
 │
@@ -1127,7 +1128,7 @@ O módulo resolve o problema de métricas posicionais: alinhamento por score com
 
 ### Frontend Streamlit ✅ Implementado (TCC 2 — 10/07/2026)
 
-Interface Streamlit no serviço `frontend` (porta 8501), três abas: **Executar** (formulário do pipeline + ingestão por diretório existente ou upload, dispara um job), **Jobs** (lista as execuções, status, log ao vivo, download dos resultados) e **Avaliar** (envolve o `POST /evaluate`). Fala com os serviços por HTTP e lê/escreve no volume `/data`. **Não toca no back.**
+Interface Streamlit no serviço `frontend` (porta 8501). Desde 12/07 tem um **login** simples (gate de UI, ver "Login do front") e **quatro abas**: **Executar** (formulário do pipeline + ingestão por diretório existente ou upload, dispara um job), **Jobs** (lista as execuções, status, log ao vivo, download dos resultados agora vindo do banco), **Avaliar** (envolve o `POST /evaluate`) e **Índice** (seleciona um job concluído e mostra a tabela completa dos registros extraídos, com filtro por campos insensível a acento). Fala com os serviços por HTTP e lê/escreve no volume `/data`. **Não toca no back.**
 
 **Decisões de implementação (aprendidas em runtime):**
 - O `/pipeline/run` é síncrono e leva horas → não é chamado direto pelo front. O front dispara um **job** no serviço `jobs` (ver abaixo), que enfileira e executa em background; o front só faz poll do status.
@@ -1135,7 +1136,7 @@ Interface Streamlit no serviço `frontend` (porta 8501), três abas: **Executar*
 - Tabelas renderizadas como **Markdown**, não `st.dataframe` — o caminho Arrow/pyarrow causava segfault (exit 139) no container. Front sem pandas.
 - Hot-reload em dev: bind mount `./frontend:/app` + `runOnSave`/`fileWatcherType=poll` no `config.toml` (poll necessário no bind mount do Docker Desktop no Windows).
 
-**Nota de escopo:** é ferramenta de operação/experimentação (uso local), não produto multi-usuário. Autenticação, multi-tenancy e histórico por usuário seguem fora de escopo.
+**Nota de escopo:** é ferramenta de operação/experimentação (uso local), não produto multi-usuário. O login de 12/07 é uma credencial única no `.env` (gate de UI), não gestão de usuários: multi-tenancy e histórico por usuário seguem fora de escopo. Ver "Login do front".
 
 ---
 
