@@ -24,9 +24,10 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel
 
+import exporters
 import store
 
 APP_URL = os.getenv("APP_URL", "http://app:8000")
@@ -103,9 +104,17 @@ def _run_one(job: dict) -> None:
         r = requests.post(f"{APP_URL}/pipeline/run", json=job["config"], timeout=None)
         r.raise_for_status()
         data = r.json()
+        records = data.get("records") or []
         job["output_files"] = data.get("output_files")
-        job["num_records"] = len(data.get("records", []) or [])
+        job["num_records"] = len(records)
         job["status"] = "done"
+        # Persiste os registros no banco (etapa 2), fonte da verdade do export.
+        # Não fatal: os arquivos que o back grava em /data/output continuam
+        # existindo (duplicação consciente, ver README) e servem de fallback.
+        try:
+            store.save_records(code, records)
+        except Exception as e:
+            log.warning("job %s: falha ao persistir registros no banco (%s)", code, e)
         log.info("job %s: done (%s registros)", code, job.get("num_records"))
     except Exception as e:
         job["status"] = "failed"
@@ -144,6 +153,7 @@ def _recover() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    store.init()
     _recover()
     threading.Thread(target=_worker, name="jobs-worker", daemon=True).start()
     yield
@@ -196,3 +206,41 @@ def get_job(code: str):
     if job is None:
         raise HTTPException(status_code=404, detail="job não encontrado")
     return job
+
+
+@app.get("/jobs/{code}/records")
+def get_job_records(code: str):
+    """Registros extraídos do job, direto do banco (fonte da verdade)."""
+    if store.load(code) is None:
+        raise HTTPException(status_code=404, detail="job não encontrado")
+    return store.load_records(code)
+
+
+@app.get("/export/formats")
+def export_formats():
+    """Formatos de export disponíveis. Fonte única: exporters.EXPORTERS. O front
+    monta os botões de download a partir daqui, sem hardcode de formato."""
+    return [
+        {"fmt": fmt, "label": exp.label, "ext": exp.ext}
+        for fmt, exp in exporters.EXPORTERS.items()
+    ]
+
+
+@app.get("/jobs/{code}/export")
+def export_job(code: str, fmt: str = "csv"):
+    """Exporta os registros do job no formato pedido, gerado a partir do banco.
+    Leitura pura no Postgres: funciona mesmo com um job rodando no worker."""
+    job = store.load(code)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job não encontrado")
+    exp = exporters.EXPORTERS.get(fmt.lower().strip())
+    if exp is None:
+        allowed = " | ".join(exporters.EXPORTERS)
+        raise HTTPException(status_code=400, detail=f"fmt inválido: use {allowed}")
+    records = store.load_records(code)
+    base = f"{job.get('collection_name', 'colecao')}_{code}"
+    return Response(
+        exp.serialize(job, records),
+        media_type=exp.media_type,
+        headers={"Content-Disposition": f'attachment; filename="{base}.{exp.ext}"'},
+    )

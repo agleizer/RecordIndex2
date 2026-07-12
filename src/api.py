@@ -393,6 +393,10 @@ def pipeline_run(req: PipelineRunRequest = None):
     base_name = make_base_name(collection.name, timestamp)
     formats = req.output_formats if req else ["json"]
 
+    # Duplicação consciente: além destes arquivos, o serviço `jobs` persiste os
+    # mesmos registros no Postgres (save_records) e o front baixa de lá. O arquivo
+    # JSON ainda é lido pelo fluxo de avaliação (eval), então a escrita continua.
+    # Convergência (eval ler do banco, parar de escrever) é passo futuro. Ver README.
     written = write_outputs(collection, output_dir, formats, base_name)
     logger.info("Pipeline output: %s", {fmt: str(p) for fmt, p in written.items()})
 

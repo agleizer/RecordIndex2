@@ -81,6 +81,27 @@ def _get(url, **kw):
     return r.json()
 
 
+@st.cache_data(ttl=300)
+def _export_formats():
+    """Formatos de export anunciados pelo serviço jobs (/export/formats).
+    Cacheado: mudam raramente. Novos formatos aparecem sem tocar no front."""
+    return _get(f"{JOBS_URL}/export/formats", timeout=10)
+
+
+@st.cache_data(ttl=60)
+def _job_records(code):
+    """Registros do job vindos do banco. Usado para saber se há o que exportar."""
+    return _get(f"{JOBS_URL}/jobs/{code}/records", timeout=30)
+
+
+@st.cache_data(ttl=60)
+def _export_bytes(code, fmt):
+    """Bytes do export no formato pedido, gerados pelo banco (não lê disco)."""
+    r = requests.get(f"{JOBS_URL}/jobs/{code}/export", params={"fmt": fmt}, timeout=120)
+    r.raise_for_status()
+    return r.content
+
+
 def _md_table(rows: list[dict], headers: list[tuple[str, str]]) -> str:
     """Tabela Markdown (sem pandas/Arrow — evita segfault do pyarrow no container)."""
     def cell(v):
@@ -258,20 +279,52 @@ with tab_jobs:
 
         elif status == "done":
             st.markdown("**Resultados**")
-            files = job.get("output_files") or {}
-            if not files:
-                st.caption("Nenhum arquivo de saída registrado.")
-            for fmt, fname in files.items():
-                fpath = OUTPUT_DIR / fname
-                if fpath.exists():
+            # Export vem do banco (fonte da verdade). Os arquivos que o back grava
+            # em /data/output continuam existindo (ver nota de duplicação no README),
+            # mas o download normal não os usa mais: só o fallback abaixo, para jobs
+            # antigos sem registros no banco.
+            try:
+                has_db = len(_job_records(code)) > 0
+            except Exception as e:
+                has_db = False
+                st.caption(f"registros indisponíveis agora: {e}")
+
+            if has_db:
+                fmts = _export_formats()
+                fmt = st.selectbox(
+                    "Formato",
+                    [f["fmt"] for f in fmts],
+                    format_func=lambda k: next(f["label"] for f in fmts if f["fmt"] == k),
+                    key=f"fmt_{code}",
+                )
+                ext = next(f["ext"] for f in fmts if f["fmt"] == fmt)
+                try:
                     st.download_button(
-                        f"Baixar {fmt.upper()} ({fname})",
-                        data=fpath.read_bytes(),
-                        file_name=fname,
-                        key=f"dl_{code}_{fmt}",
+                        "Baixar",
+                        data=_export_bytes(code, fmt),
+                        file_name=f"{code}.{ext}",
+                        key=f"dl_{code}",
                     )
-                else:
-                    st.caption(f"{fmt}: arquivo {fname} não encontrado em /data/output")
+                except Exception as e:
+                    st.caption(f"export indisponível agora: {e}")
+            else:
+                # Fallback: jobs anteriores à persistência no banco (ou save_records
+                # que falhou). Baixa os arquivos gravados pelo back em /data/output.
+                st.caption("Sem registros no banco para este job; baixando os arquivos gerados.")
+                files = job.get("output_files") or {}
+                if not files:
+                    st.caption("Nenhum arquivo de saída registrado.")
+                for fmt, fname in files.items():
+                    fpath = OUTPUT_DIR / fname
+                    if fpath.exists():
+                        st.download_button(
+                            f"Baixar {fmt.upper()} ({fname})",
+                            data=fpath.read_bytes(),
+                            file_name=fname,
+                            key=f"dl_{code}_{fmt}",
+                        )
+                    else:
+                        st.caption(f"{fmt}: arquivo {fname} não encontrado em /data/output")
 
         elif status == "failed":
             st.error(job.get("error") or "Falhou sem mensagem.")

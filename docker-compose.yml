@@ -102,9 +102,31 @@ services:
     networks:
       - recordindex
 
+  jobsdb:
+    # Banco de estado da fila de jobs (etapa 1) e, adiante, dos registros
+    # extraídos (etapa 2). Porta exposta em JOBS_DB_HOST_PORT para acesso externo
+    # via DBeaver/pgAdmin (host = localhost, porta = JOBS_DB_HOST_PORT).
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=${JOBS_DB_USER}
+      - POSTGRES_PASSWORD=${JOBS_DB_PASSWORD}
+      - POSTGRES_DB=${JOBS_DB_NAME}
+    volumes:
+      - jobs_db:/var/lib/postgresql/data
+    ports:
+      - "${JOBS_DB_HOST_PORT}:5432"      # host:5433 → evita conflito com Postgres local
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${JOBS_DB_USER} -d ${JOBS_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - recordindex
+
   jobs:
     # Fila serial de execuções do pipeline. Um worker chama o /pipeline/run do
-    # serviço `app` (síncrono, pode levar horas), um job por vez. Estado em /data/jobs.
+    # serviço `app` (síncrono, pode levar horas), um job por vez. Estado no jobsdb.
     # Porta 8002 — Swagger em http://localhost:8002/docs
     build:
       context: .
@@ -112,15 +134,17 @@ services:
     volumes:
       - ./volumes/input:/data/input     # conta imagens da coleção
       - ./volumes/output:/data/output   # lê os arquivos gerados pelo pipeline
-      - ./volumes/jobs:/data/jobs       # estado persistido dos jobs
     environment:
       - APP_URL=http://app:8000
-      - JOBS_DIR=/data/jobs
       - INPUT_DIR=/data/input
+      - JOBS_DB_DSN=postgresql://${JOBS_DB_USER}:${JOBS_DB_PASSWORD}@jobsdb:5432/${JOBS_DB_NAME}
     ports:
       - "8002:8002"
     depends_on:
-      - app
+      app:
+        condition: service_started
+      jobsdb:
+        condition: service_healthy
     networks:
       - recordindex
 
@@ -156,3 +180,4 @@ networks:
 volumes:
   ollama_data:
   docufcn_models:    # modelo 'generic-historical-line' do HuggingFace
+  jobs_db:           # dados do Postgres da fila de jobs
