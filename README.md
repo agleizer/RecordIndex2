@@ -100,10 +100,13 @@ Todos os agentes recebem um `BaseChatModel` (LangChain) em vez de URL/modelo har
 
 ```python
 # mesmo código nos agentes, qualquer provider:
-model = get_chat_model("ollama",     "qwen3.5:9b",         ollama_url)
-model = get_chat_model("anthropic",  "claude-sonnet-4-6",  ...)
-model = get_chat_model("openai",     "gpt-4o",             ...)
+model = get_chat_model("ollama",       "qwen3.5:9b",         ollama_url)
+model = get_chat_model("ollama_cloud", "kimi-k3",            ...)  # requer OLLAMA_API_KEY
+model = get_chat_model("anthropic",    "claude-sonnet-4-6",  ...)
+model = get_chat_model("openai",       "gpt-4o",             ...)
 ```
+
+> **Ollama Cloud:** provider `ollama_cloud` aponta para `https://ollama.com` (endpoint fixo, não usa `ollama_base_url`) e autentica via header `Authorization: Bearer <OLLAMA_API_KEY>`. Dá acesso a modelos hospedados maiores do que o viável rodar localmente (kimi-k3, qwen3.5:122b). Ver `02_desenvolvimento/2026_08_03_teste_modelos_ollama_cloud/` para o plano de testes.
 
 O A0 pode escalar para um provider externo em runtime injetando `a2_model_override` (ou `aN_model_override`) no estado do LangGraph — sem refatorar os agentes.
 

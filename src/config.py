@@ -11,7 +11,7 @@ class Config:
     ollama_base_url: str
 
     # Provider e modelo por agente.
-    # Provider: "ollama" | "anthropic" | "openai"
+    # Provider: "ollama" | "ollama_cloud" | "anthropic" | "openai"
     # O A0 pode escalar para outro provider em runtime via estado do LangGraph.
     a0_provider: str
     a0_model: str
@@ -35,6 +35,7 @@ class Config:
     # API keys para providers externos (opcionais — só necessários se provider != "ollama")
     anthropic_api_key: str
     openai_api_key: str
+    ollama_api_key: str  # requerida apenas se algum provider for "ollama_cloud"
 
     # Diretórios
     input_dir: str
@@ -92,6 +93,7 @@ class Config:
             a2_fallback_threshold=float(os.getenv("A2_FALLBACK_THRESHOLD", "0.5")),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
+            ollama_api_key=os.getenv("OLLAMA_API_KEY", ""),
             input_dir=os.getenv("INPUT_DIR", "/data/input"),
             output_dir=os.getenv("OUTPUT_DIR", "/data/output"),
             samples_dir=os.getenv("SAMPLES_DIR", "/data/samples"),

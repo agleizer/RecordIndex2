@@ -5,9 +5,10 @@ Todos os providers retornam um BaseChatModel com a mesma interface —
 os agentes são completamente agnósticos ao provider.
 
 Providers suportados:
-  ollama     — modelos locais via Ollama (padrão)
-  anthropic  — Claude via API Anthropic (requer ANTHROPIC_API_KEY)
-  openai     — GPT via API OpenAI (requer OPENAI_API_KEY)
+  ollama        — modelos locais via Ollama (padrão)
+  ollama_cloud  — modelos hospedados no Ollama Cloud (requer OLLAMA_API_KEY)
+  anthropic     — Claude via API Anthropic (requer ANTHROPIC_API_KEY)
+  openai        — GPT via API OpenAI (requer OPENAI_API_KEY)
 
 O A0 (Semana 5) usará esta factory para escalar para providers externos
 em casos onde o modelo local não for suficiente.
@@ -19,13 +20,30 @@ Utilitário:
   quando with_structured_output delega via __getattr__ ao modelo base.
 """
 
+import os
+
 from langchain_core.language_models import BaseChatModel
+
+# Endpoint fixo do Ollama Cloud — não é configurável via OLLAMA_BASE_URL porque
+# esse env var já é usado pelo Ollama local (docker-compose aponta para o container).
+_OLLAMA_CLOUD_BASE_URL = "https://ollama.com"
 
 
 def get_chat_model(provider: str, model: str, ollama_base_url: str = "http://localhost:11434") -> BaseChatModel:
     if provider == "ollama":
         from langchain_ollama import ChatOllama
         return ChatOllama(model=model, base_url=ollama_base_url)
+
+    if provider == "ollama_cloud":
+        from langchain_ollama import ChatOllama
+        api_key = os.getenv("OLLAMA_API_KEY", "")
+        if not api_key:
+            raise ValueError("OLLAMA_API_KEY não definida no .env — necessária para provider 'ollama_cloud'")
+        return ChatOllama(
+            model=model,
+            base_url=_OLLAMA_CLOUD_BASE_URL,
+            client_kwargs={"headers": {"Authorization": f"Bearer {api_key}"}},
+        )
 
     if provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
@@ -35,7 +53,7 @@ def get_chat_model(provider: str, model: str, ollama_base_url: str = "http://loc
         from langchain_openai import ChatOpenAI
         return ChatOpenAI(model=model)
 
-    raise ValueError(f"Provider desconhecido: '{provider}'. Use: ollama | anthropic | openai")
+    raise ValueError(f"Provider desconhecido: '{provider}'. Use: ollama | ollama_cloud | anthropic | openai")
 
 
 def disable_think(model: BaseChatModel) -> BaseChatModel:
