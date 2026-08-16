@@ -53,6 +53,7 @@ class JobConfig(BaseModel):
     record_template: str = ""
     image_dir: str = ""
     output_formats: list[str] = ["json", "csv"]
+    pipeline_mode: str = "mas"         # "mas" (padrão) | "generalist"
 
 
 def _now() -> str:

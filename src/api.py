@@ -87,6 +87,8 @@ def health() -> HealthResponse:
             "a3": AgentConfig(provider=config.a3_provider, model=config.a3_model),
             "a4": AgentConfig(provider=config.a4_provider, model=config.a4_model),
             "a5": AgentConfig(provider=config.a5_provider, model=config.a5_model),
+            "ag": AgentConfig(provider=config.ag_provider, model=config.ag_model),
+            "am": AgentConfig(provider=config.am_provider, model=config.am_model),
         },
     )
 
@@ -377,11 +379,15 @@ def pipeline_run(req: PipelineRunRequest = None):
         htr_scope=req.htr_scope if req else "line",
     )
 
-    logger.info("Pipeline run: dir=%s, collection_name=%s, type_hint=%s",
-                image_dir, col_input.collection_name, col_input.collection_type)
+    pipeline_mode = req.pipeline_mode if req else "mas"
+    logger.info("Pipeline run: dir=%s, collection_name=%s, type_hint=%s, pipeline_mode=%s",
+                image_dir, col_input.collection_name, col_input.collection_type, pipeline_mode)
 
     try:
-        collection = pipeline.run_pipeline(config, col_input)
+        if pipeline_mode == "generalist":
+            collection = pipeline.run_generalist_pipeline(config, col_input)
+        else:
+            collection = pipeline.run_pipeline(config, col_input)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

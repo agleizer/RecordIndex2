@@ -181,7 +181,18 @@ with tab_run:
     c3, c4, c5 = st.columns(3)
     year = c3.text_input("Ano", "1863")
     location = c4.text_input("Localidade", "Porto da Cruz, Madeira")
-    htr_scope = c5.selectbox("HTR scope", ["line", "page"])
+
+    pipeline_mode_label = c5.selectbox(
+        "Modo de pipeline",
+        ["MAS (padrão)", "Generalista (single-prompt + merge)"],
+    )
+    pipeline_mode = "generalist" if pipeline_mode_label.startswith("Generalista") else "mas"
+
+    if pipeline_mode == "generalist":
+        st.caption("Modo generalista: cada página é lida por uma única chamada (AG). HTR scope é ignorado.")
+        htr_scope = "page"
+    else:
+        htr_scope = st.selectbox("HTR scope", ["line", "page"])
 
     fmts = st.multiselect("Formatos de saída", ["json", "csv", "txt"], default=["json", "csv"])
     hint = st.text_input("record_start_hint (opcional)", "")
@@ -227,6 +238,7 @@ with tab_run:
 
             cfg = {
                 "htr_scope": htr_scope,
+                "pipeline_mode": pipeline_mode,
                 "collection_name": name,
                 "year": year,
                 "location": location,

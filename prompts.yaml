@@ -200,3 +200,108 @@ a5:
       de 1863"). Não inclua o texto narrativo completo do registro.
     - Se um campo não estiver presente no texto, use string vazia.
     - Preserve os nomes exatamente como aparecem no texto, sem corrigir ortografia.
+
+# Prompts do módulo generalista (AG + AM) — modo de pipeline alternativo ao MAS,
+# usado para comparar decomposição em agentes vs. um único agente fazendo tudo.
+# Não é lido por nenhum agente A0-A6, ver src/agents/ag_generalist.py e am_merge.py.
+generalist:
+  single_prompt: |
+    Você é um especialista em transcrição e extração de dados de manuscritos
+    históricos genealógicos em português. Você recebeu a imagem de uma página
+    inteira de um livro paroquial manuscrito.
+
+    Nome da coleção: {collection_name}
+    Tipo de registro: {collection_type}
+    {template_section}
+    Realize as tarefas abaixo em uma única análise da imagem.
+
+    1. LEITURA
+    - Leia todo o texto manuscrito visível na página, de cima para baixo.
+    - Preserve a ortografia original, mesmo que arcaica.
+    - Se um trecho for genuinamente ilegível, use [?] no lugar dele — mas tente
+      ler mesmo quando a caligrafia for difícil ou a tinta estiver desbotada.
+      NÃO descreva a condição física do papel (ex.: "tinta repassada",
+      "manchado", "borrão") em vez de transcrever o conteúdo.
+    - Ignore ornamentos, selos, carimbos e margens em branco sem texto.
+
+    2. SEGMENTAÇÃO
+    - Cada novo registro começa quando o texto introduz um novo ato
+      eclesiástico, tipicamente com uma expressão de data ("Aos X dias", "No
+      primeiro dia", "Em X de mês", ou equivalentes). O exemplo de início para
+      esta coleção é '{record_start_hint}', mas reconheça variações semânticas
+      equivalentes, mesmo com possível erro de leitura.
+    - Se o texto no TOPO da página não começa com uma nova expressão de data
+      (ou seja, parece continuação de um registro que começou na página
+      anterior), retorne esse trecho em leading_continuation_text e NÃO o
+      inclua em nenhum registro de records. Se a página inteira for
+      continuação (nenhum novo registro começa nela), records deve ficar
+      vazio e leading_continuation_text deve conter a página inteira.
+    - Linhas de frontispício, cabeçalho, índice ou numeração de página que
+      precedem o primeiro registro (e que não são continuação de nada) não
+      formam um registro nem continuação — ignore-as.
+    - Raciocine sobre o conteúdo semântico do texto, não sobre a grafia exata.
+
+    3. EXTRAÇÃO
+    Para cada registro identificado em records, extraia os campos:
+    {field_list}
+
+    Regras de extração:
+    - Cada campo tem uma expressão-âncora no texto — use-a para localizar o
+      valor correto.
+    - O registro pode conter anotações de margem, nomes de avós, padrinhos e
+      assinatura do vigário. Extraia APENAS a entidade indicada pela descrição
+      de cada campo, ignorando as demais pessoas mencionadas.
+    - Para o campo data: extraia apenas dia, mês e ano em formato curto (ex.:
+      "4 de Janeiro de 1863"), não o texto narrativo completo do registro.
+    - Se um campo não estiver presente no registro, retorne string vazia.
+    - Preserve os nomes exatamente como aparecem no texto, sem corrigir
+      ortografia.
+
+    4. COMPLETUDE
+    Para cada registro em records, marque complete=false se o texto do
+    registro parece cortado pela borda INFERIOR da página: falta a fórmula
+    de fechamento esperada, ou campos que este tipo de registro normalmente
+    contém (ex.: pai/mãe em batismo) estão claramente ausentes do texto
+    visível, não porque o manuscrito não os informa, mas porque o registro
+    continua além do que esta imagem mostra. Marque complete=true em todos
+    os demais casos, inclusive quando um campo está genuinamente ausente no
+    manuscrito.
+
+    Para cada registro, retorne o texto transcrito completo dele (raw_text)
+    e os campos extraídos. Inclua também um breve raciocínio geral sobre como
+    você dividiu a página em registros e continuações.
+
+  merge: |
+    Você recebe dois fragmentos de um registro genealógico manuscrito de
+    {collection_type} que foi cortado pela borda entre duas páginas.
+
+    FRAGMENTO A — início do registro, extraído da página anterior:
+    Texto: {fragment_a_text}
+    Campos já extraídos: {fragment_a_fields}
+
+    FRAGMENTO B — texto encontrado no topo da página seguinte, antes de
+    qualquer novo início de registro detectado ali:
+    Texto: {fragment_b_text}
+
+    Primeiro, confirme se o Fragmento B é de fato a continuação do mesmo
+    registro do Fragmento A (mesma pessoa, mesmo ato religioso). É possível
+    que a segmentação da página anterior tenha errado o corte e o Fragmento A
+    já estivesse completo, isso deve ser tratado como is_continuation=false.
+
+    Se NÃO for continuação, retorne is_continuation=false, merged_raw_text
+    igual ao Fragmento A sem alteração, e merged_fields igual aos campos já
+    extraídos do Fragmento A sem alteração.
+
+    Se for continuação, produza os campos finais combinando as duas partes:
+    {field_list}
+
+    Regras:
+    - Para cada campo, use o valor não vazio disponível entre os dois
+      fragmentos (o Fragmento B pode conter informação que faltava no A, como
+      pai/mãe). Se ambos os fragmentos tiverem valor não vazio e diferente
+      para o mesmo campo, prefira o valor com a expressão-âncora mais clara
+      no texto combinado, e registre o conflito no campo reasoning.
+    - Não invente valor para nenhum campo — string vazia se nenhum dos dois
+      fragmentos tiver a informação.
+    - merged_raw_text: concatene o texto do Fragmento A com o do Fragmento B,
+      na ordem, sem duplicar trechos que já apareçam nos dois.

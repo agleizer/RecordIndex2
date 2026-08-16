@@ -15,6 +15,7 @@ em vez de mostrar "object" genérico.
 from pydantic import BaseModel, field_validator
 
 _VALID_HTR_SCOPES = {"line", "page"}
+_VALID_PIPELINE_MODES = {"mas", "generalist"}
 
 
 class AgentConfig(BaseModel):
@@ -211,6 +212,9 @@ class PipelineRunRequest(BaseModel):
                      Se vazio, A0 infere automaticamente.
     record_start_hint: expressão típica de início de registro (ex: "Aos").
                        Se vazio, A0 usa o padrão do tipo detectado.
+    pipeline_mode:   "mas" (padrão, pipeline A0-A6 completo) | "generalist"
+                     (modo alternativo, AG+AM, ver 2026_08_16_modulo_generalista_vs_mas/).
+                     Em modo "generalist", htr_scope é ignorado (AG sempre lê a página inteira).
     """
 
     collection_name: str = "Coleção"
@@ -222,10 +226,18 @@ class PipelineRunRequest(BaseModel):
     image_dir: str = ""              # diretório de imagens — se vazio, usa SAMPLES_DIR do config
     output_formats: list[str] = ["json"]  # formatos de saída: "json" | "csv" | "txt"
     htr_scope: str = "line"          # "line": A2 por linha (padrão) | "page": A2 por página inteira
+    pipeline_mode: str = "mas"       # "mas" (padrão) | "generalist"
 
     @field_validator("htr_scope")
     @classmethod
     def _validate_htr_scope(cls, v: str) -> str:
         if v not in _VALID_HTR_SCOPES:
             raise ValueError(f"htr_scope inválido: '{v}'. Use: line | page")
+        return v
+
+    @field_validator("pipeline_mode")
+    @classmethod
+    def _validate_pipeline_mode(cls, v: str) -> str:
+        if v not in _VALID_PIPELINE_MODES:
+            raise ValueError(f"pipeline_mode inválido: '{v}'. Use: mas | generalist")
         return v

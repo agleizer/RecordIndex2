@@ -5,6 +5,20 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _env_or(*keys: str, default: str) -> str:
+    """
+    Retorna o primeiro valor não vazio entre as env vars em `keys`, na ordem
+    dada, ou `default` se nenhuma estiver preenchida. Trata "" (var presente
+    mas vazia no .env, ex: 'AG_PROVIDER=') como não definida — diferente de
+    os.getenv(key, fallback), que só cai no fallback se a var estiver ausente.
+    """
+    for key in keys:
+        val = os.getenv(key, "")
+        if val:
+            return val
+    return default
+
+
 @dataclass
 class Config:
     # Ollama
@@ -25,6 +39,14 @@ class Config:
     a5_model: str
     a6_provider: str
     a6_model: str
+
+    # AG/AM — modo de pipeline generalista (alternativo ao MAS A0-A6), ver
+    # 2026_08_16_modulo_generalista_vs_mas/. AM usa o mesmo provider/model
+    # do AG por padrão se AM_PROVIDER/AM_MODEL não forem definidos.
+    ag_provider: str
+    ag_model: str
+    am_provider: str
+    am_model: str
 
     # Fallback do A2: acionado quando A6 detecta score < a2_fallback_threshold
     # Se a2_fallback_model for vazio, o fallback está desabilitado
@@ -88,6 +110,10 @@ class Config:
             a5_model=os.getenv("A5_MODEL", "llama3.2"),
             a6_provider=os.getenv("A6_PROVIDER", "ollama"),
             a6_model=os.getenv("A6_MODEL", "llama3.2"),
+            ag_provider=_env_or("AG_PROVIDER", "A2_PROVIDER", default="ollama"),
+            ag_model=_env_or("AG_MODEL", "A2_MODEL", default="qwen3.5:9b"),
+            am_provider=_env_or("AM_PROVIDER", "AG_PROVIDER", "A2_PROVIDER", default="ollama"),
+            am_model=_env_or("AM_MODEL", "AG_MODEL", "A2_MODEL", default="qwen3.5:9b"),
             a2_fallback_provider=os.getenv("A2_FALLBACK_PROVIDER", ""),
             a2_fallback_model=os.getenv("A2_FALLBACK_MODEL", ""),
             a2_fallback_threshold=float(os.getenv("A2_FALLBACK_THRESHOLD", "0.5")),

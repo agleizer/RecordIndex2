@@ -16,6 +16,12 @@ run_with_orchestrator():
   Mantido para compatibilidade com código de teste existente.
   Aceita CollectionConfig já construída (tipo conhecido externamente).
   Usa A0 mas pula a etapa de classificação.
+
+run_generalist_pipeline():
+  Pipeline alternativo via AGOrchestrator (modo generalista, ver
+  `2026_08_16_modulo_generalista_vs_mas/`). Não usa A1-A5 — cada página é
+  processada por uma única chamada ao agente generalista (AG) + merge (AM)
+  quando necessário. A0/A1-A5 não são tocados por este caminho.
 """
 
 from pathlib import Path
@@ -42,6 +48,19 @@ def run_pipeline(config: Config, collection_input: CollectionInput) -> Collectio
     """
     a0 = A0Orchestrator(config)
     return a0.run(collection_input)
+
+
+def run_generalist_pipeline(config: Config, collection_input: CollectionInput) -> Collection:
+    """
+    Executa o pipeline alternativo via AGOrchestrator (modo generalista).
+
+    Cada página é processada por uma única chamada multimodal (AG), que faz
+    leitura + segmentação + extração de uma vez. AM (merge) só é acionado
+    quando AG sinaliza continuação entre páginas. Não usa A1-A5.
+    """
+    from src.agents.ag_orchestrator import AGOrchestrator
+    ag = AGOrchestrator(config)
+    return ag.run(collection_input)
 
 
 def run_with_orchestrator(image_dir: str, config: Config, collection_config: CollectionConfig) -> Collection:
