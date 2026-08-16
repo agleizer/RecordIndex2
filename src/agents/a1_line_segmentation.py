@@ -36,6 +36,18 @@ logger = logging.getLogger("recordindex.a1")
 # detecção IQR é mais robusta que um threshold fixo para essas dimensões.
 _MIN_WIDTH = int(os.getenv("A1_MIN_WIDTH", "200"))
 #
+# Altura mínima de canvas (A1_MIN_HEIGHT): descoberto em 16/08 rodando qwen3.5:9b
+# local como A2 pela primeira vez — um recorte de 31px de altura derrubou o model
+# runner do Ollama (qwen3vl exige height/width > 32px pra processar a imagem, "must
+# be larger than factor:32", panic não recuperável no lado do servidor). O IQR por
+# página não cobre isso: mesmo sem nenhum outlier estatístico, uma linha pode estar
+# genuinamente abaixo do piso técnico de qualquer VLM.
+# Diferente de A1_MIN_WIDTH, aqui NÃO descartamos a linha (perderia conteúdo real,
+# a linha pode ser legítima, só fina) — preenchemos com borda branca até esse piso,
+# preservando o conteúdo original centralizado. Padrão 40 (margem sobre os 32px do
+# qwen3vl).
+_MIN_HEIGHT = int(os.getenv("A1_MIN_HEIGHT", "40"))
+#
 # Detecção estatística de outliers (IQR por página):
 # A1_OUTLIER_SENSITIVITY (k): multiplica o IQR para definir a cerca inferior.
 #   Q1 - k * IQR  → abaixo dessa cerca = outlier.
@@ -146,6 +158,18 @@ class A1LineSegmentationAgent:
         for idx, (_, x, y, w, h) in enumerate(candidates):
             crop = bgr[y : y + h, x : x + w]
             line_id = f"{page_stem}_line_{idx + 1:04d}"
+
+            if crop.shape[0] < _MIN_HEIGHT:
+                pad = _MIN_HEIGHT - crop.shape[0]
+                top, bottom = pad // 2, pad - pad // 2
+                logger.debug(
+                    "A1: recorte '%s' com %dpx de altura — preenchendo com borda branca até %dpx",
+                    line_id, crop.shape[0], _MIN_HEIGHT,
+                )
+                crop = cv2.copyMakeBorder(
+                    crop, top, bottom, 0, 0, cv2.BORDER_CONSTANT, value=(255, 255, 255)
+                )
+
             line_path = os.path.join(output_dir, f"{line_id}.jpg")
             cv2.imwrite(line_path, crop)
 
