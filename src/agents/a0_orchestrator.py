@@ -40,6 +40,7 @@ Interface LangGraph (Semana 5):
 """
 
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -60,6 +61,16 @@ from src.models.page import Page
 from src.models.record import Record
 
 logger = logging.getLogger("recordindex.a0")
+
+# DT-25 (16/08): teto de segurança pro modo page. Descoberto rodando a coleção
+# completa (108 páginas, qwen3.5:9b): uma página com leitura corrompida pode levar
+# o A3 a "explodir" dezenas de fronteiras falsas numa chamada só (caso real: 51
+# registros espúrios de uma vez, mais dois casos de 6). Distribuição real observada
+# nesse run: 1-3 blocos é o uso normal (102 páginas só com 3), nada entre 4 e 6,
+# depois os casos corrompidos (6, 6, 51). Teto em 5 separa os dois grupos sem
+# descartar páginas legítimas. Acima disso, a página é descartada (mesmo caminho
+# de "nenhum registro encontrado" já existente) em vez de aceitar os blocos cegamente.
+A3_MAX_BLOCKS_PER_PAGE = int(os.getenv("A3_MAX_BLOCKS_PER_PAGE", "5"))
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 
@@ -599,6 +610,15 @@ class A0Orchestrator:
             record_texts = [t.strip() for t in blocks.record_texts if t.strip()]
             logger.info("A0: [A3] %d blocos detectados em %.1fs", len(record_texts), time.time() - t_a3)
             logger.debug("A0: [A3] reasoning: %s", blocks.reasoning)
+
+            if len(record_texts) > A3_MAX_BLOCKS_PER_PAGE:
+                logger.warning(
+                    "A0: [A3] %d blocos na página '%s' excede o teto de segurança "
+                    "(%d, DT-25) — descartando a segmentação desta página, provável "
+                    "corrupção de leitura",
+                    len(record_texts), page.filename, A3_MAX_BLOCKS_PER_PAGE,
+                )
+                return full_text, []
 
             if not record_texts:
                 return full_text, []
