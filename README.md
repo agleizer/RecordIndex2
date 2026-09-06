@@ -603,6 +603,7 @@ Serviço separado na porta 8001. Compara o output do pipeline com o CSV arquiví
 ```json
 {
   "collection_type": "batismo",
+  "metrics_schema": 2,
   "segmentation": {
     "total_gt": 128,
     "total_output": 112,
@@ -616,10 +617,10 @@ Serviço separado na porta 8001. Compara o output do pipeline com o CSV arquiví
   },
   "extraction": {
     "_coverage": 0.758,
-    "nome": {"tp": 88, "fp": 5, "fn": 4, "precision": 0.946, "recall": 0.957, "f1": 0.951, "exact_match_rate": 0.72, "effective_recall": 0.726, "effective_f1": 0.821},
-    "pai":  {"tp": 74, "fp": 12, "fn": 11, "precision": 0.860, "recall": 0.871, "f1": 0.865, "exact_match_rate": 0.41, "effective_recall": 0.660, "effective_f1": 0.746},
-    "mae":  {"tp": 71, "fp": 15, "fn": 11, "precision": 0.826, "recall": 0.866, "f1": 0.845, "exact_match_rate": 0.39, "effective_recall": 0.656, "effective_f1": 0.733},
-    "data": {"tp": 82, "fp": 9, "fn": 6, "precision": 0.901, "recall": 0.932, "f1": 0.916, "exact_match_rate": 0.28, "effective_recall": 0.707, "effective_f1": 0.793}
+    "nome": {"tp": 88, "fp": 5, "fn": 4, "precision": 0.946, "effective_recovery_rate": 0.688, "effective_composite_f1": 0.797, "matched_recovery_rate": 0.907, "exact_match_rate": 0.72},
+    "pai":  {"tp": 74, "fp": 12, "fn": 11, "precision": 0.860, "effective_recovery_rate": 0.578, "effective_composite_f1": 0.691, "matched_recovery_rate": 0.763, "exact_match_rate": 0.41},
+    "mae":  {"tp": 71, "fp": 15, "fn": 11, "precision": 0.826, "effective_recovery_rate": 0.555, "effective_composite_f1": 0.664, "matched_recovery_rate": 0.732, "exact_match_rate": 0.39},
+    "data": {"tp": 82, "fp": 9, "fn": 6, "precision": 0.901, "effective_recovery_rate": 0.641, "effective_composite_f1": 0.749, "matched_recovery_rate": 0.845, "exact_match_rate": 0.28}
   },
   "record_comparisons": [...],
   "unmatched_output_ids": [3, 17, 42]
@@ -830,10 +831,10 @@ PT/ABM/PMCH04/001/00025/000001; Registo de batismo n.º 1: Maria. Pai: Romano de
   },
   "extraction": {
     "_coverage": 0.857,
-    "nome": {"tp": 10, "fp": 1, "fn": 1, "precision": 0.91, "recall": 0.91, "f1": 0.91, "exact_match_rate": 0.7, "effective_recall": 0.78, "effective_f1": 0.84},
-    "pai":  {"...", "effective_recall": "...", "effective_f1": "..."},
-    "mae":  {"...", "effective_recall": "...", "effective_f1": "..."},
-    "data": {"...", "effective_recall": "...", "effective_f1": "..."}
+    "nome": {"tp": 10, "fp": 1, "fn": 1, "precision": 0.909, "effective_recovery_rate": 0.078, "effective_composite_f1": 0.144, "matched_recovery_rate": 0.833, "exact_match_rate": 0.7},
+    "pai":  {"...", "effective_recovery_rate": "...", "effective_composite_f1": "..."},
+    "mae":  {"...", "effective_recovery_rate": "...", "effective_composite_f1": "..."},
+    "data": {"...", "effective_recovery_rate": "...", "effective_composite_f1": "..."}
   },
   "record_comparisons": [
     {
@@ -861,32 +862,69 @@ PT/ABM/PMCH04/001/00025/000001; Registo de batismo n.º 1: Maria. Pai: Romano de
 
 **Semântica adotada (NER estrita):** valor incorreto presente = FP **e** FN simultaneamente. Campo ausente = apenas FN. Isso garante equivalência com literatura de NER/IE — campos sempre preenchidos (mesmo que errados) não inflam artificialmente o recall.
 
-**Métricas principais de reporte:**
+**Métricas principais de reporte** (as duas que o relatório do TCC 2 publica):
 
-| Métrica | O que mede | Denominador |
-|---|---|---|
-| `effective_slot_accuracy` | De todos os GT, quantos tiveram o campo extraído corretamente | total_GT (132) |
-| `slot_accuracy` | Dos registros casados, quantos tiveram o campo extraído corretamente | matched (94) |
-| `strict_effective_f1` | F1 end-to-end com semântica NER estrita — para comparação com literatura | — |
+| Métrica | Símbolo no relatório | O que mede | Denominador |
+|---|---|---|---|
+| `effective_recovery_rate` | $R_{ef}$ | De todos os registros do GT, em quantos o campo saiu correto | total_GT (132) |
+| `effective_composite_f1` | $F1_{ef}$ | Combina `precision` sobre casados com $R_{ef}$ sobre o GT inteiro | veja abaixo |
 
-**Métricas de diagnóstico** (sobre registros casados):
+$R_{ef}$ **não é uma accuracy**: não há verdadeiro negativo no denominador. O que ela mede é
+recuperação. $F1_{ef}$ é um **indicador composto definido no trabalho**, não uma métrica padrão, e
+por isso não deve ser comparado diretamente a valores de F1 da literatura.
+
+**Métricas de diagnóstico:**
 
 | Métrica | O que mede |
 |---|---|
-| `precision` | tp / (tp + fp) — qualidade do que foi extraído |
-| `strict_recall` | tp / (tp + fn_strict) — recall com semântica estrita |
-| `fn_strict` | fn + fp — erros totais (ausências + valores errados) |
+| `matched_recovery_rate` | tp / casados. Isola a extração do desempenho da segmentação |
+| `precision` | tp / (tp + fp), qualidade do que foi extraído |
+| `strict_recall` | tp / (tp + fn_strict), recall com semântica estrita |
+| `strict_effective_recall` | idêntica a `effective_recovery_rate` para campos de cardinalidade 1 |
+| `fn_strict` | fn + fp, erros totais (ausências mais valores errados) |
+| `_coverage` | fração do GT com alinhamento confiável |
 
-**Métricas legadas** (mantidas para compatibilidade, semântica antiga — valor errado = FP apenas):
-`recall`, `f1`, `effective_recall`, `effective_f1` — não usar como métrica principal do relatório.
+**Métricas legadas** (semântica anterior a 02/05/2026, valor errado conta só como FP):
+`recall`, `f1`, `legacy_effective_recall`, `legacy_effective_f1`. São **infladas** e não devem ser
+reportadas. Mantidas apenas para reproduzir análises antigas.
 
-> **Qual usar?** Para desempenho geral: `effective_slot_accuracy` (imediato: "62,9% dos 132 registros tiveram o nome correto"). Para comparação com NER/IE: `strict_effective_f1`. Para diagnosticar gargalo A3 vs A5: `slot_accuracy` vs `_coverage`.
+> **Qual usar?** Desempenho geral: `effective_recovery_rate` (imediato: "79,5% dos 132 registros
+> tiveram o nome correto"). Comparação end-to-end entre configurações: `effective_composite_f1`.
+> Diagnóstico de gargalo A3 vs A5: `matched_recovery_rate` contra `_coverage`.
+
+#### Renomeação de 05/09/2026 e leitura de arquivos antigos
+
+Os nomes acima mudaram em 05/09/2026, para acompanhar a terminologia do relatório. Arquivos gerados
+antes disso não têm a chave `metrics_schema` e usam o vocabulário antigo:
+
+| Schema 1 (até 04/09/2026) | Schema 2 (atual) |
+|---|---|
+| `effective_slot_accuracy` | `effective_recovery_rate` |
+| `strict_effective_f1` | `effective_composite_f1` |
+| `slot_accuracy` | `matched_recovery_rate` |
+| `effective_recall` | `legacy_effective_recall` |
+| `effective_f1` | `legacy_effective_f1` |
+
+Os **valores não mudaram**, só os nomes. Para ler um arquivo dos dois formatos com o vocabulário
+atual, use o helper do módulo:
+
+```python
+from metrics import normalize_metrics_schema
+
+d = normalize_metrics_schema(json.load(open("eval_2026-08-28_01-16.json", encoding="utf-8")))
+d["extraction"]["nome"]["effective_recovery_rate"]   # R_ef
+d["extraction"]["nome"]["effective_composite_f1"]    # F1_ef
+```
+
+⚠️ **Armadilha nos arquivos schema 1:** `effective_recall` e `effective_f1` são as chaves de nome
+mais convidativo e são justamente as legadas infladas, não as do relatório. No schema 2 elas ganham
+o prefixo `legacy_` para tornar o engano impossível.
 
 **Alinhamento:** score composto ponderado nome (0.40) + pai (0.35) + mãe (0.25), com Jaro-Winkler e normalização de acentos. Pré-filtro: nome JW ≥ 0.65. Threshold final: 0.80.
 
 **Data:** comparação por mês (extrai mês do texto português extraído vs. mês do ISO GT). `exact_match_rate` reporta casos onde A5 extraiu data em formato ISO diretamente.
 
-**Semântica de FP/FN (NER estrita, implementada em 02/05/2026):** FP = campo presente no output mas incorreto (JW < 0.85). FN = campo ausente no output. `fn_strict = fn + fp` — valor incorreto presente conta como FP **e** FN. Métrica principal: `effective_slot_accuracy = tp / total_GT`.
+**Semântica de FP/FN (NER estrita, implementada em 02/05/2026):** FP = campo presente no output mas incorreto (JW < 0.85). FN = campo ausente no output. `fn_strict = fn + fp`, ou seja, valor incorreto presente conta como FP **e** FN. Métrica principal: `effective_recovery_rate = tp / total_GT`.
 
 Documentação do protocolo completo: `02_desenvolvimento/2026_03_23_protocolo_avaliacao/protocolo_avaliacao.md`
 

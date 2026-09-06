@@ -23,7 +23,7 @@ OUTPUT_DIR = Path("/data/output")
 
 from csv_parser import parse_reference_csv
 from matcher import align
-from metrics import compare_field, extraction_metrics, segmentation_metrics
+from metrics import METRICS_SCHEMA, compare_field, extraction_metrics, segmentation_metrics
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -126,6 +126,9 @@ async def evaluate(
     # --- Resposta ---
     result = {
         "collection_type": collection_type,
+        # Identifica o vocabulário de métricas deste arquivo. Sem esta chave, o
+        # arquivo é schema 1 (nomes anteriores a 05/09/2026).
+        "metrics_schema": METRICS_SCHEMA,
         "segmentation": seg,
         "extraction": ext,
         "record_comparisons": record_comparisons,

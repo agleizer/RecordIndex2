@@ -452,18 +452,26 @@ with tab_eval:
                     continue
                 rows.append({
                     "campo": field,
-                    "slot_acc": m.get("slot_accuracy"),
-                    "eff_slot_acc": m.get("effective_slot_accuracy"),
-                    "eff_f1": m.get("effective_f1"),
+                    # R_ef e F1_ef são as duas métricas que o relatório publica.
+                    # Até 05/09/2026 esta tabela exibia effective_f1, que é a variante
+                    # legada e inflada, sob o rótulo eff_f1: não batia com o relatório.
+                    "R_ef": m.get("effective_recovery_rate"),
+                    "F1_ef": m.get("effective_composite_f1"),
+                    "rec_casados": m.get("matched_recovery_rate"),
                     "exact_rate": m.get("exact_match_rate"),
                     "tp": m.get("tp"), "fp": m.get("fp"), "fn": m.get("fn"),
                 })
             if rows:
                 st.markdown(_md_table(rows, [
-                    ("campo", "campo"), ("slot_acc", "slot_acc"),
-                    ("eff_slot_acc", "eff_slot_acc"), ("eff_f1", "eff_f1"),
+                    ("campo", "campo"), ("R_ef", "R_ef"), ("F1_ef", "F1_ef"),
+                    ("rec_casados", "rec_casados"),
                     ("exact_rate", "exact_rate"), ("tp", "tp"), ("fp", "fp"), ("fn", "fn"),
                 ]))
+                st.caption(
+                    "R_ef = taxa de recuperação efetiva (tp / total GT). "
+                    "F1_ef = indicador composto do trabalho, não comparável a F1 da literatura. "
+                    "rec_casados = tp / pares casados, isola a extração da segmentação."
+                )
 
             st.download_button(
                 "Baixar resultado completo (JSON)",
