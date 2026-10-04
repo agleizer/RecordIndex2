@@ -131,6 +131,9 @@ RecordIndex2/
 ├── README.md                   # Este arquivo
 ├── requirements.txt
 │
+├── data/
+│   └── ground_truth/           # Ground truth do artigo: Porto da Cruz, batismos de 1863 (132 registros)
+│
 ├── docker/
 │   ├── app/
 │   │   └── Dockerfile          # Container da aplicação Python
@@ -797,6 +800,8 @@ O `docker-compose.yml` já configura o Ollama para usar todas as GPUs NVIDIA dis
 ## Módulo de avaliação (serviço separado)
 
 O módulo `evaluation/` é um **serviço Docker independente** (porta 8001) que compara o output do pipeline com o índice arquivístico da coleção. Não faz parte do pipeline A0–A6 e não usa Ollama nem GPU.
+
+O *ground truth* usado nas nove execuções do artigo (Porto da Cruz, batismos de 1863, 132 registros) está em [`data/ground_truth/`](data/ground_truth/), com procedência e formato descritos no README da pasta.
 
 Swagger: `http://localhost:8001/docs`
 
